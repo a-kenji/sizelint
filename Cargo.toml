@@ -1,0 +1,45 @@
+[package]
+name = "sizelint"
+version = "0.1.0"
+edition = "2024"
+description = "A git-aware file size linter"
+license = "MIT"
+authors = ["Alexander Kenji Berthold"]
+documentation = "https://github.com/a-kenji/sizelint"
+homepage = "https://github.com/documentation/sizelint"
+repository = "https://github.com/documentation/sizelint"
+keywords = ["git", "linter", "formatter", "file-size", "ci-cd"]
+categories = [
+  "command-line-utilities",
+  "development-tools",
+  "development-tools::testing",
+]
+include = ["src/**/*", "LICENSE", "README.md", "tests/**/*"]
+
+[dependencies]
+clap = { version = "4.5.41", features = ["derive"] }
+clap_complete = "4.5.55"
+colored = "3.0.0"
+globset = "0.4.16"
+ignore = "0.4.23"
+miette = { version = "7.6.0", features = ["fancy"] }
+rayon = "1.10.0"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+thiserror = "2.0.12"
+tokio = { version = "1.46.1", features = ["full"] }
+toml = "0.9.2"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = "3.20.0"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = "s"
+strip = true
+
+[lints.rust]
+unsafe_code = "forbid"
