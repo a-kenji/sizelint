@@ -229,7 +229,7 @@ mod tests {
         assert!(config.rules.is_some());
         let rules = config.rules.as_ref().unwrap();
         assert!(!rules.rules.is_empty());
-        assert!(rules.rules.contains_key("large_files"));
+        assert!(rules.rules.contains_key("medium_files"));
     }
 
     #[test]

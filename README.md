@@ -164,21 +164,29 @@ Run `sizelint init` to create a default configuration:
 
 ```
 [sizelint]
-max_file_size = "5MB"
-warn_file_size = "2MB"
+max_file_size = "10MB"
+warn_file_size = "5MB"
 excludes = []
 check_staged = false
 check_working_tree = false
 respect_gitignore = true
 
-[rules.large_files]
+[rules.medium_files]
 enabled = true
-description = "Checks for files that exceed configured size limits"
+description = "Base rule that fits many normal repos"
 priority = 50
 max_size = "5MB"
 warn_size = "2MB"
 includes = []
 excludes = []
+
+[rules.no_images]
+enabled = false
+description = "Warn about image files that might be better handled with LFS"
+priority = 80
+includes = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp"]
+excludes = []
+warn_on_match = true
 
 ```
 

@@ -247,6 +247,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires git binary"]
     fn test_discovers_files_without_gitignore() -> Result<()> {
         let repo = TestRepo::new()?;
 
@@ -277,6 +278,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires git binary"]
     fn test_respects_gitignore() -> Result<()> {
         let repo = TestRepo::new()?;
 
@@ -311,6 +313,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires git binary"]
     fn test_ignores_gitignore_when_disabled() -> Result<()> {
         let repo = TestRepo::new()?;
 
@@ -336,6 +339,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires git binary"]
     fn test_config_excludes_override_gitignore() -> Result<()> {
         let repo = TestRepo::new()?;
 
@@ -366,6 +370,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires git binary"]
     fn test_specific_files_ignore_gitignore() -> Result<()> {
         let repo = TestRepo::new()?;
 
