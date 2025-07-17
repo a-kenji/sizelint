@@ -95,6 +95,9 @@ Options:
   -q, --quiet
           Quiet mode (only show violations)
 
+      --fail-on-warn
+          Treat warnings as errors
+
   -h, --help
           Print help (see a summary with '-h')
 ```
@@ -170,6 +173,7 @@ excludes = []
 check_staged = false
 check_working_tree = false
 respect_gitignore = true
+fail_on_warn = false
 
 [rules.medium_files]
 enabled = true
