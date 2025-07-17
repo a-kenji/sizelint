@@ -41,6 +41,10 @@ pub struct SizelintConfig {
     /// Respect .gitignore patterns
     #[serde(default = "default_true")]
     pub respect_gitignore: bool,
+
+    /// Treat warnings as errors
+    #[serde(default)]
+    pub fail_on_warn: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -97,6 +101,7 @@ impl SizelintConfig {
         self.check_staged = other.check_staged;
         self.check_working_tree = other.check_working_tree;
         self.respect_gitignore = other.respect_gitignore;
+        self.fail_on_warn = other.fail_on_warn;
     }
 }
 

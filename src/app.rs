@@ -147,7 +147,13 @@ impl App {
             let has_errors = violations
                 .iter()
                 .any(|v| matches!(v.severity, crate::rules::Severity::Error));
-            if has_errors {
+
+            let fail_on_warn = self.cli.get_fail_on_warn() || self.config.sizelint.fail_on_warn;
+            let has_warnings = violations
+                .iter()
+                .any(|v| matches!(v.severity, crate::rules::Severity::Warning));
+
+            if has_errors || (fail_on_warn && has_warnings) {
                 process::exit(1);
             }
         }

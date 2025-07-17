@@ -58,6 +58,10 @@ pub enum Commands {
         /// Quiet mode (only show violations)
         #[arg(short, long)]
         quiet: bool,
+
+        /// Treat warnings as errors
+        #[arg(long)]
+        fail_on_warn: bool,
     },
 
     /// Initialize sizelint configuration
@@ -171,6 +175,13 @@ impl Cli {
     pub fn get_working_tree(&self) -> bool {
         match &self.command {
             Commands::Check { working_tree, .. } => *working_tree,
+            _ => false,
+        }
+    }
+
+    pub fn get_fail_on_warn(&self) -> bool {
+        match &self.command {
+            Commands::Check { fail_on_warn, .. } => *fail_on_warn,
             _ => false,
         }
     }
