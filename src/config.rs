@@ -14,6 +14,7 @@ fn default_true() -> bool {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    #[serde(flatten)]
     pub sizelint: SizelintConfig,
     pub rules: Option<RulesConfig>,
 }
