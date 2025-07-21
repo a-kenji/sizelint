@@ -25,7 +25,7 @@ It can be used as a standalone tool, pre-commit hook, or as part of your CI/CD p
 <!-- `$ nix run . help` -->
 
 ```
-A git-aware file size linter
+Lint your working tree based on file size
 
 Usage: sizelint [OPTIONS] <COMMAND>
 

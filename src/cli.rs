@@ -14,7 +14,7 @@ const SUPPORTED_SHELLS: &[(&str, Shell)] = &[
 #[derive(Parser, Debug)]
 #[command(
     name = "sizelint",
-    about = "A git-aware file size linter",
+    about = env!("CARGO_PKG_DESCRIPTION"),
     version,
     author
 )]
