@@ -1,4 +1,3 @@
-[sizelint]
 max_file_size = "10MB"
 warn_file_size = "5MB"
 excludes = []
