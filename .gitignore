@@ -1,15 +1,4 @@
-# nix support
 /.direnv
 /result
 /result-*
-
-# rust support
 target
-
-# tree-sitter
-/vendor
-
-
-# Added by cargo
-
-/target
