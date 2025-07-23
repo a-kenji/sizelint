@@ -43,6 +43,10 @@ pub enum Commands {
         /// Paths to check
         paths: Vec<PathBuf>,
 
+        /// Configuration file path
+        #[arg(short, long, value_name = "FILE")]
+        config: Option<PathBuf>,
+
         /// Output format
         #[arg(short = 'f', long, default_value = "human")]
         format: OutputFormat,
@@ -186,7 +190,14 @@ impl Cli {
         }
     }
 
-    pub fn parse_shell(shell_str: &str) -> Result<Shell, String> {
+    pub fn get_check_config(&self) -> Option<PathBuf> {
+        match &self.command {
+            Commands::Check { config, .. } => config.clone(),
+            _ => None,
+        }
+    }
+
+    pub fn parse_shell(shell_str: &str) -> std::result::Result<Shell, String> {
         let shell_lower = shell_str.to_lowercase();
         SUPPORTED_SHELLS
             .iter()
@@ -202,7 +213,7 @@ impl Cli {
             })
     }
 
-    pub fn generate_completion(shell_str: &str) -> Result<(), String> {
+    pub fn generate_completion(shell_str: &str) -> std::result::Result<(), String> {
         let shell = Self::parse_shell(shell_str)?;
         let mut cmd = Self::command();
         generate(shell, &mut cmd, "sizelint", &mut io::stdout());

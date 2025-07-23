@@ -28,9 +28,16 @@ impl App {
     fn load_config(cli: &Cli) -> Result<Config> {
         let _span = span!(Level::DEBUG, "load_config").entered();
 
-        let config = if let Some(config_path) = &cli.config {
+        // Priority order: 1) subcommand config, 2) global config, 3) auto-discover, 4) default
+        let config = if let Some(config_path) = cli.get_check_config() {
             debug!(
-                "Loading config from specified path: {}",
+                "Loading config from subcommand-specified path: {}",
+                config_path.display()
+            );
+            Config::load_from_file(&config_path)?
+        } else if let Some(config_path) = &cli.config {
+            debug!(
+                "Loading config from global config path: {}",
                 config_path.display()
             );
             Config::load_from_file(config_path)?
