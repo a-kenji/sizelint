@@ -76,6 +76,9 @@ Arguments:
           Paths to check
 
 Options:
+  -c, --config <FILE>
+          Configuration file path
+
   -f, --format <FORMAT>
           Output format
           
@@ -166,7 +169,6 @@ Run `sizelint init` to create a default configuration:
 <!-- `$ nix run . -- init --stdout` -->
 
 ```
-[sizelint]
 max_file_size = "10MB"
 warn_file_size = "5MB"
 excludes = []
