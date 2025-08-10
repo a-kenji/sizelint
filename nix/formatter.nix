@@ -10,6 +10,8 @@
       programs.rustfmt.enable = true;
       programs.taplo.enable = true;
       programs.typos.enable = true;
+      programs.sizelint.enable = true;
+      programs.sizelint.failOnWarn = true;
     };
   };
 }
