@@ -30,7 +30,7 @@ thiserror = "2.0.17"
 tokio = { version = "1.47.1", features = ["full"] }
 toml = "0.9.4"
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 
 [dev-dependencies]
 tempfile = "3.23.0"
