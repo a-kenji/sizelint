@@ -18,7 +18,7 @@ include = ["src/**/*", "LICENSE", "README.md", "tests/**/*"]
 
 [dependencies]
 clap = { version = "4.5.42", features = ["derive", "suggestions", "wrap_help"] }
-clap_complete = "4.5.55"
+clap_complete = "4.5.60"
 colored = "3.0.0"
 globset = "0.4.16"
 ignore = "0.4.23"
