@@ -4,7 +4,8 @@
   pkgs,
 }:
 let
-  cargoTOML = builtins.fromTOML (builtins.readFile (self + "/Cargo.toml"));
+  root = ../.;
+  cargoTOML = fromTOML (builtins.readFile (root + "/Cargo.toml"));
   inherit (cargoTOML.package) version name;
   pname = name;
   gitDate = "${builtins.substring 0 4 self.lastModifiedDate}-${
@@ -13,13 +14,22 @@ let
   gitRev = self.shortRev or self.dirtyShortRev;
   meta = import ./meta.nix { inherit lib; };
   craneLib = self.inputs.crane.mkLib pkgs;
+  fileset = lib.fileset.unions [
+    (root + "/Cargo.toml")
+    (root + "/Cargo.lock")
+    (root + "/src")
+    (root + "/tests")
+    (root + "/docs")
+  ];
   commonArgs = {
     nativeBuildInputs = with pkgs; [
       scdoc
       installShellFiles
     ];
     inherit version name pname;
-    src = lib.cleanSourceWith { src = craneLib.path ../.; };
+    src = lib.fileset.toSource {
+      inherit root fileset;
+    };
   };
   cargoArtifacts = craneLib.buildDepsOnly commonArgs;
   cargoClippy = craneLib.cargoClippy (commonArgs // { inherit cargoArtifacts; });
