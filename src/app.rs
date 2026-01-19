@@ -5,7 +5,7 @@ use crate::error::{Result, SizelintError};
 use crate::output::{OutputFormatter, print_error, print_progress, print_success};
 use crate::rules::{ConfigurableRule, RuleEngine};
 use colored::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 use tracing::{Level, debug, span};
 
@@ -65,26 +65,26 @@ impl App {
         Ok(config)
     }
 
-    pub async fn run(&self) -> Result<()> {
+    pub fn run(&self) -> Result<()> {
         match self.cli.get_command() {
-            Commands::Check { paths, .. } => self.run_check(paths).await,
+            Commands::Check { paths, .. } => self.run_check(paths),
             Commands::Init {
                 force,
                 stdout,
                 edit,
-            } => self.run_init(force, stdout, edit).await,
-            Commands::Rules { action } => self.run_rules(action).await,
+            } => self.run_init(force, stdout, edit),
+            Commands::Rules { action } => self.run_rules(action),
             Commands::Completions { shell } => Cli::generate_completion(&shell).map_err(|e| {
                 SizelintError::config_invalid("shell".to_string(), shell.to_string(), e)
             }),
         }
     }
 
-    async fn run_check(&self, paths: Vec<PathBuf>) -> Result<()> {
+    fn run_check(&self, paths: Vec<PathBuf>) -> Result<()> {
         let check_paths = self.determine_check_paths(paths);
         let discovery = self.setup_file_discovery(&check_paths)?;
         let files = self.discover_files(&discovery, &check_paths)?;
-        self.validate_and_check_files(files).await
+        self.validate_and_check_files(files)
     }
 
     fn determine_check_paths(&self, paths: Vec<PathBuf>) -> Vec<PathBuf> {
@@ -118,14 +118,14 @@ impl App {
             || (self.config.sizelint.check_working_tree && discovery.is_in_git_repo())
         {
             discovery.discover_working_tree_files()
-        } else if check_paths.len() == 1 && check_paths[0] == PathBuf::from(".") {
+        } else if check_paths.len() == 1 && check_paths[0] == Path::new(".") {
             discovery.discover_files(self.config.sizelint.respect_gitignore)
         } else {
             discovery.discover_specific_paths(check_paths)
         }
     }
 
-    async fn validate_and_check_files(&self, files: Vec<PathBuf>) -> Result<()> {
+    fn validate_and_check_files(&self, files: Vec<PathBuf>) -> Result<()> {
         if files.is_empty() {
             print_success("No files to check");
             return Ok(());
@@ -168,7 +168,7 @@ impl App {
         Ok(())
     }
 
-    async fn run_init(&self, force: bool, stdout: bool, edit: bool) -> Result<()> {
+    fn run_init(&self, force: bool, stdout: bool, edit: bool) -> Result<()> {
         let default_config = Config::create_default_config();
 
         if stdout {
@@ -236,7 +236,7 @@ impl App {
         Ok(())
     }
 
-    async fn run_rules(&self, action: RuleAction) -> Result<()> {
+    fn run_rules(&self, action: RuleAction) -> Result<()> {
         match action {
             RuleAction::List => {
                 let rule_engine = self.create_rule_engine()?;
