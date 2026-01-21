@@ -3,6 +3,11 @@
 [![Built with Nix](https://img.shields.io/static/v1?label=built%20with&message=nix&color=5277C3&logo=nixos&style=flat-square&logoColor=ffffff)](https://builtwithnix.org)
 [![Crates](https://img.shields.io/crates/v/sizelint?style=flat-square)](https://crates.io/crates/sizelint)
 
+`sizelint` is a fast, configurable file size linter that helps prevent large files from entering your Git repository.
+It can be used as a standalone tool, pre-commit hook, or as part of your CI/CD pipeline.
+
+## Overview
+
 <!--toc:start-->
 - [`$ sizelint` - lint your working tree based on file sizes](#sizelint-lint-your-working-tree-based-on-file-sizes)
   - [`$ sizelint` - usage](#-sizelint---usage)
@@ -15,10 +20,6 @@
   - [License](#license)
 <!--toc:end-->
 
-## Overview
-
-`sizelint` is a fast, configurable file size linter that helps prevent large files from entering your Git repository.
-It can be used as a standalone tool, pre-commit hook, or as part of your CI/CD pipeline.
 
 ## `$ sizelint` - usage
 
