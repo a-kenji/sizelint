@@ -178,11 +178,11 @@ impl GitRepo {
             .current_dir(&self.root)
             .output();
 
-        if let Ok(output) = output {
-            if output.status.success() {
-                let output_str = String::from_utf8_lossy(&output.stdout);
-                return output_str.contains("filter: lfs");
-            }
+        if let Ok(output) = output
+            && output.status.success()
+        {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            return output_str.contains("filter: lfs");
         }
 
         false

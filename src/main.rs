@@ -3,8 +3,7 @@ use miette::Result;
 use sizelint::{App, Cli};
 use std::process;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
 
     if let Err(e) = sizelint::log::init(Some(cli.log_level.as_str()), cli.verbose, cli.get_quiet())
@@ -16,7 +15,7 @@ async fn main() -> Result<()> {
     tracing::debug!("Starting sizelint");
 
     let app = App::new(cli)?;
-    app.run().await?;
+    app.run()?;
 
     tracing::debug!("Sizelint completed successfully");
     Ok(())

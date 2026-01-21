@@ -137,12 +137,11 @@ impl RuleEngine {
 
         // Find all rules that would apply to this file
         for rule in &self.rules {
-            if rule.is_enabled() {
-                if let Some(configurable_rule) = rule.as_any().downcast_ref::<ConfigurableRule>() {
-                    if !configurable_rule.should_skip_file(path) {
-                        matching_rules.push((rule, configurable_rule.get_priority()));
-                    }
-                }
+            if rule.is_enabled()
+                && let Some(configurable_rule) = rule.as_any().downcast_ref::<ConfigurableRule>()
+                && !configurable_rule.should_skip_file(path)
+            {
+                matching_rules.push((rule, configurable_rule.get_priority()));
             }
         }
 
@@ -437,44 +436,44 @@ impl Rule for ConfigurableRule {
         let file_size = self.get_file_size(path)?;
 
         // Check error threshold (max_size)
-        if let Some(max_size) = self.max_size {
-            if file_size > max_size {
-                violations.push(
-                    Violation::new(
-                        path.to_path_buf(),
-                        self.name.clone(),
-                        format!(
-                            "File size {} exceeds maximum allowed size {}",
-                            format_size(file_size),
-                            format_size(max_size)
-                        ),
-                        Severity::Error,
-                    )
-                    .with_actual_value(format_size(file_size))
-                    .with_expected_value(format!("≤ {}", format_size(max_size))),
-                );
-                return Ok(violations);
-            }
+        if let Some(max_size) = self.max_size
+            && file_size > max_size
+        {
+            violations.push(
+                Violation::new(
+                    path.to_path_buf(),
+                    self.name.clone(),
+                    format!(
+                        "File size {} exceeds maximum allowed size {}",
+                        format_size(file_size),
+                        format_size(max_size)
+                    ),
+                    Severity::Error,
+                )
+                .with_actual_value(format_size(file_size))
+                .with_expected_value(format!("≤ {}", format_size(max_size))),
+            );
+            return Ok(violations);
         }
 
         // Check warning threshold (warn_size)
-        if let Some(warn_size) = self.warn_size {
-            if file_size > warn_size {
-                violations.push(
-                    Violation::new(
-                        path.to_path_buf(),
-                        self.name.clone(),
-                        format!(
-                            "File size {} exceeds warning threshold {}",
-                            format_size(file_size),
-                            format_size(warn_size)
-                        ),
-                        Severity::Warning,
-                    )
-                    .with_actual_value(format_size(file_size))
-                    .with_expected_value(format!("≤ {}", format_size(warn_size))),
-                );
-            }
+        if let Some(warn_size) = self.warn_size
+            && file_size > warn_size
+        {
+            violations.push(
+                Violation::new(
+                    path.to_path_buf(),
+                    self.name.clone(),
+                    format!(
+                        "File size {} exceeds warning threshold {}",
+                        format_size(file_size),
+                        format_size(warn_size)
+                    ),
+                    Severity::Warning,
+                )
+                .with_actual_value(format_size(file_size))
+                .with_expected_value(format!("≤ {}", format_size(warn_size))),
+            );
         }
 
         Ok(violations)
