@@ -147,14 +147,6 @@ impl Cli {
         self.command.clone()
     }
 
-    pub fn get_paths(&self) -> Vec<PathBuf> {
-        match &self.command {
-            Commands::Check { paths, .. } if !paths.is_empty() => paths.clone(),
-            Commands::Check { .. } => vec![PathBuf::from(".")],
-            _ => vec![],
-        }
-    }
-
     pub fn get_format(&self) -> OutputFormat {
         match &self.command {
             Commands::Check { format, .. } => format.clone(),
