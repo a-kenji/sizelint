@@ -5,7 +5,7 @@ use crate::error::{Result, SizelintError};
 use crate::output::{OutputFormatter, print_error, print_progress, print_success};
 use crate::rules::{ConfigurableRule, RuleEngine};
 use colored::*;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process;
 use tracing::{Level, debug, span};
 
@@ -81,33 +81,42 @@ impl App {
     }
 
     fn run_check(&self, paths: Vec<PathBuf>) -> Result<()> {
-        let check_paths = self.determine_check_paths(paths);
-        let discovery = self.setup_file_discovery(&check_paths)?;
-        let files = self.discover_files(&discovery, &check_paths)?;
+        let files = if paths.is_empty() {
+            self.discover_files()?
+        } else {
+            // Explicit paths: use them directly without staged/working-tree
+            // override. Files pass through, directories get walked.
+            self.resolve_paths(paths)?
+        };
         self.validate_and_check_files(files)
     }
 
-    fn determine_check_paths(&self, paths: Vec<PathBuf>) -> Vec<PathBuf> {
-        if paths.is_empty() {
-            self.cli.get_paths()
-        } else {
-            paths
+    fn resolve_paths(&self, paths: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
+        let mut files = Vec::new();
+        let mut dirs = Vec::new();
+
+        for path in paths {
+            if path.is_file() {
+                files.push(path);
+            } else if path.is_dir() {
+                dirs.push(path);
+            }
         }
+
+        if !dirs.is_empty() {
+            let root = dirs.first().unwrap();
+            let discovery = FileDiscovery::new(root, &self.config.sizelint.excludes)?;
+            files.extend(discovery.discover_specific_paths(&dirs)?);
+        }
+
+        Ok(files)
     }
 
-    fn setup_file_discovery(&self, check_paths: &[PathBuf]) -> Result<FileDiscovery> {
-        debug!("Initializing file discovery...");
-        FileDiscovery::new(
-            check_paths.first().unwrap_or(&PathBuf::from(".")),
-            &self.config.sizelint.excludes,
-        )
-    }
+    fn discover_files(&self) -> Result<Vec<PathBuf>> {
+        let current_dir =
+            std::env::current_dir().map_err(|e| SizelintError::CurrentDirectory { source: e })?;
+        let discovery = FileDiscovery::new(&current_dir, &self.config.sizelint.excludes)?;
 
-    fn discover_files(
-        &self,
-        discovery: &FileDiscovery,
-        check_paths: &[PathBuf],
-    ) -> Result<Vec<PathBuf>> {
         debug!("Discovering files...");
 
         if self.cli.get_staged()
@@ -118,10 +127,8 @@ impl App {
             || (self.config.sizelint.check_working_tree && discovery.is_in_git_repo())
         {
             discovery.discover_working_tree_files()
-        } else if check_paths.len() == 1 && check_paths[0] == Path::new(".") {
-            discovery.discover_files(self.config.sizelint.respect_gitignore)
         } else {
-            discovery.discover_specific_paths(check_paths)
+            discovery.discover_files(self.config.sizelint.respect_gitignore)
         }
     }
 
