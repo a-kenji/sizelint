@@ -160,7 +160,9 @@ impl App {
         file_count: usize,
         elapsed: std::time::Duration,
     ) -> Result<()> {
-        let formatter = OutputFormatter::new(self.cli.get_format(), self.cli.get_quiet());
+        let cwd =
+            std::env::current_dir().map_err(|e| SizelintError::CurrentDirectory { source: e })?;
+        let formatter = OutputFormatter::new(self.cli.get_format(), self.cli.get_quiet(), cwd);
         formatter.output_results(violations, file_count, elapsed)?;
 
         if !violations.is_empty() {
