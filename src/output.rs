@@ -4,6 +4,7 @@ use crate::rules::{Severity, Violation};
 use colored::*;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
+use std::time::Duration;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OutputSummary {
@@ -35,13 +36,17 @@ impl OutputFormatter {
         Self { format, quiet }
     }
 
-    pub fn output_results(&self, violations: &[Violation], files_checked: usize) -> Result<()> {
+    pub fn output_results(
+        &self,
+        violations: &[Violation],
+        files_checked: usize,
+        elapsed: Duration,
+    ) -> Result<()> {
         let summary = self.create_summary(violations, files_checked);
 
         match self.format {
-            OutputFormat::Human => self.output_human(violations, &summary),
+            OutputFormat::Human => self.output_human(violations, &summary, elapsed),
             OutputFormat::Json => self.output_json(&summary),
-            OutputFormat::Summary => self.output_summary(&summary),
         }
     }
 
@@ -84,74 +89,80 @@ impl OutputFormatter {
         }
     }
 
-    fn output_human(&self, violations: &[Violation], summary: &OutputSummary) -> Result<()> {
+    fn output_human(
+        &self,
+        violations: &[Violation],
+        summary: &OutputSummary,
+        elapsed: Duration,
+    ) -> Result<()> {
         let mut stdout = io::stdout();
 
-        if !self.quiet {
-            writeln!(stdout, "{}", "Sizelint Results".bold().blue())?;
-            writeln!(stdout, "{}", "==================".blue())?;
-            writeln!(stdout)?;
-        }
+        for violation in violations {
+            let severity_icon = match violation.severity {
+                Severity::Error => "✗".red().bold(),
+                Severity::Warning => "⚠".yellow().bold(),
+            };
+            let path_str = violation.path.display().to_string();
+            let rule_info = format!(
+                "[{}:{}]",
+                violation.rule_name,
+                match violation.severity {
+                    Severity::Error => "error",
+                    Severity::Warning => "warning",
+                }
+            )
+            .dimmed();
 
-        if !violations.is_empty() {
-            for violation in violations {
-                let severity_icon = match violation.severity {
-                    Severity::Error => "✗".red().bold(),
-                    Severity::Warning => "⚠".yellow().bold(),
-                };
-                let path_str = violation.path.display().to_string();
-                let rule_info = format!(
-                    "[{}:{}]",
-                    violation.rule_name,
-                    match violation.severity {
-                        Severity::Error => "error",
-                        Severity::Warning => "warning",
-                    }
-                )
-                .dimmed();
-
-                writeln!(
-                    stdout,
-                    "{} {}: {} {}",
-                    severity_icon,
-                    path_str.bold(),
-                    violation.message,
-                    rule_info
-                )?;
-            }
-            writeln!(stdout)?;
-        } else {
-            writeln!(stdout, "{}", "✓ No violations found".green().bold())?;
+            writeln!(
+                stdout,
+                "{} {}: {} {}",
+                severity_icon,
+                path_str.bold(),
+                violation.message,
+                rule_info
+            )?;
         }
 
         if !self.quiet {
-            writeln!(stdout, "{}", "Summary".bold())?;
-            writeln!(stdout, "-------")?;
-            writeln!(stdout, "Files checked: {}", summary.total_files_checked)?;
-            writeln!(stdout, "Total violations: {}", summary.total_violations)?;
-
+            writeln!(stdout)?;
+            writeln!(
+                stdout,
+                "{}",
+                format!("Analysis took {:.2}s", elapsed.as_secs_f64()).dimmed()
+            )?;
+            let mut parts = vec![format!("Checked {} files", summary.total_files_checked)];
             if summary.error_count > 0 {
-                writeln!(
-                    stdout,
-                    "Errors: {}",
-                    summary.error_count.to_string().red().bold()
-                )?;
+                parts.push(format!(
+                    "{} {}",
+                    summary.error_count.to_string().red().bold(),
+                    if summary.error_count == 1 {
+                        "error"
+                    } else {
+                        "errors"
+                    }
+                ));
             }
             if summary.warning_count > 0 {
-                writeln!(
-                    stdout,
-                    "Warnings: {}",
-                    summary.warning_count.to_string().yellow().bold()
-                )?;
+                parts.push(format!(
+                    "{} {}",
+                    summary.warning_count.to_string().yellow().bold(),
+                    if summary.warning_count == 1 {
+                        "warning"
+                    } else {
+                        "warnings"
+                    }
+                ));
             }
 
-            if summary.error_count > 0 {
-                writeln!(stdout, "Status: {}", "✗ FAILED".red().bold())?;
+            let status = if summary.error_count > 0 {
+                "FAILED".red().bold()
             } else if summary.warning_count > 0 {
-                writeln!(stdout, "Status: {}", "⚠ WARNINGS".yellow().bold())?;
+                "WARNINGS".yellow().bold()
             } else {
-                writeln!(stdout, "Status: {}", "✓ PASSED".green().bold())?;
-            }
+                "PASSED".green().bold()
+            };
+
+            writeln!(stdout, "{}. [{}]", parts.join(", "), status)?;
         }
 
         Ok(())
@@ -161,33 +172,6 @@ impl OutputFormatter {
         let json = serde_json::to_string_pretty(summary)?;
 
         println!("{json}");
-        Ok(())
-    }
-
-    fn output_summary(&self, summary: &OutputSummary) -> Result<()> {
-        let mut stdout = io::stdout();
-
-        writeln!(stdout, "Files: {}", summary.total_files_checked)?;
-        writeln!(stdout, "Violations: {}", summary.total_violations)?;
-        writeln!(
-            stdout,
-            "Errors: {}",
-            summary.error_count.to_string().red().bold()
-        )?;
-        writeln!(
-            stdout,
-            "Warnings: {}",
-            summary.warning_count.to_string().yellow().bold()
-        )?;
-
-        if summary.error_count > 0 {
-            writeln!(stdout, "Status: {}", "✗ FAILED".red().bold())?;
-        } else if summary.warning_count > 0 {
-            writeln!(stdout, "Status: {}", "⚠ WARNINGS".yellow().bold())?;
-        } else {
-            writeln!(stdout, "Status: {}", "✓ PASSED".green().bold())?;
-        }
-
         Ok(())
     }
 }

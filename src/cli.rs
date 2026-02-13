@@ -112,8 +112,6 @@ pub enum OutputFormat {
     Human,
     /// JSON output
     Json,
-    /// Summary only
-    Summary,
 }
 
 #[derive(ValueEnum, Debug, Clone)]

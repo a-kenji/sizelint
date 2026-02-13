@@ -81,6 +81,7 @@ impl App {
     }
 
     fn run_check(&self, paths: Vec<PathBuf>) -> Result<()> {
+        let start = std::time::Instant::now();
         let files = if paths.is_empty() {
             self.discover_files()?
         } else {
@@ -88,7 +89,7 @@ impl App {
             // override. Files pass through, directories get walked.
             self.resolve_paths(paths)?
         };
-        self.validate_and_check_files(files)
+        self.validate_and_check_files(files, start)
     }
 
     fn resolve_paths(&self, paths: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
@@ -132,7 +133,11 @@ impl App {
         }
     }
 
-    fn validate_and_check_files(&self, files: Vec<PathBuf>) -> Result<()> {
+    fn validate_and_check_files(
+        &self,
+        files: Vec<PathBuf>,
+        start: std::time::Instant,
+    ) -> Result<()> {
         if files.is_empty() {
             print_success("No files to check");
             return Ok(());
@@ -146,16 +151,17 @@ impl App {
         debug!("Running checks...");
         let violations = rule_engine.check_files(&files)?;
 
-        self.output_results_and_exit(&violations, files.len())
+        self.output_results_and_exit(&violations, files.len(), start.elapsed())
     }
 
     fn output_results_and_exit(
         &self,
         violations: &[crate::rules::Violation],
         file_count: usize,
+        elapsed: std::time::Duration,
     ) -> Result<()> {
         let formatter = OutputFormatter::new(self.cli.get_format(), self.cli.get_quiet());
-        formatter.output_results(violations, file_count)?;
+        formatter.output_results(violations, file_count, elapsed)?;
 
         if !violations.is_empty() {
             let has_errors = violations
