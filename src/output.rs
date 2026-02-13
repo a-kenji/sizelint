@@ -4,6 +4,7 @@ use crate::rules::{Severity, Violation};
 use colored::*;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -29,11 +30,23 @@ pub struct ViolationOutput {
 pub struct OutputFormatter {
     format: OutputFormat,
     quiet: bool,
+    base_path: PathBuf,
 }
 
 impl OutputFormatter {
-    pub fn new(format: OutputFormat, quiet: bool) -> Self {
-        Self { format, quiet }
+    pub fn new(format: OutputFormat, quiet: bool, base_path: PathBuf) -> Self {
+        Self {
+            format,
+            quiet,
+            base_path,
+        }
+    }
+
+    fn relative_path(&self, path: &Path) -> String {
+        path.strip_prefix(&self.base_path)
+            .unwrap_or(path)
+            .display()
+            .to_string()
     }
 
     pub fn output_results(
@@ -66,7 +79,7 @@ impl OutputFormatter {
                 }
 
                 ViolationOutput {
-                    path: v.path.display().to_string(),
+                    path: self.relative_path(&v.path),
                     rule_name: v.rule_name.clone(),
                     message: v.message.clone(),
                     severity: match v.severity {
@@ -102,7 +115,7 @@ impl OutputFormatter {
                 Severity::Error => "✗".red().bold(),
                 Severity::Warning => "⚠".yellow().bold(),
             };
-            let path_str = violation.path.display().to_string();
+            let path_str = self.relative_path(&violation.path);
             let rule_info = format!(
                 "[{}:{}]",
                 violation.rule_name,
