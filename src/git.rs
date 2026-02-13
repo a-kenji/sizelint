@@ -164,27 +164,4 @@ impl GitRepo {
             .map(|output| output.status.success())
             .unwrap_or(false)
     }
-
-    pub fn is_file_lfs<P: AsRef<Path>>(&self, path: P) -> bool {
-        let relative_path = match path.as_ref().strip_prefix(&self.root) {
-            Ok(p) => p,
-            Err(_) => return false,
-        };
-
-        let output = Command::new("git")
-            .arg("check-attr")
-            .arg("filter")
-            .arg(relative_path)
-            .current_dir(&self.root)
-            .output();
-
-        if let Ok(output) = output
-            && output.status.success()
-        {
-            let output_str = String::from_utf8_lossy(&output.stdout);
-            return output_str.contains("filter: lfs");
-        }
-
-        false
-    }
 }
