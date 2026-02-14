@@ -42,6 +42,7 @@ pub struct Violation {
     pub severity: Severity,
     pub actual_value: Option<String>,
     pub expected_value: Option<String>,
+    pub sort_key: u64,
 }
 
 impl Violation {
@@ -58,6 +59,7 @@ impl Violation {
             severity,
             actual_value: None,
             expected_value: None,
+            sort_key: 0,
         }
     }
 
@@ -68,6 +70,11 @@ impl Violation {
 
     pub fn with_expected_value(mut self, expected: String) -> Self {
         self.expected_value = Some(expected);
+        self
+    }
+
+    pub fn with_sort_key(mut self, key: u64) -> Self {
+        self.sort_key = key;
         self
     }
 
@@ -444,14 +451,14 @@ impl Rule for ConfigurableRule {
                     path.to_path_buf(),
                     self.name.clone(),
                     format!(
-                        "File size {} exceeds maximum allowed size {}",
-                        format_size(file_size),
+                        "File exceeds maximum allowed size {}",
                         format_size(max_size)
                     ),
                     Severity::Error,
                 )
                 .with_actual_value(format_size(file_size))
-                .with_expected_value(format!("≤ {}", format_size(max_size))),
+                .with_expected_value(format!("≤ {}", format_size(max_size)))
+                .with_sort_key(file_size),
             );
             return Ok(violations);
         }
@@ -464,15 +471,12 @@ impl Rule for ConfigurableRule {
                 Violation::new(
                     path.to_path_buf(),
                     self.name.clone(),
-                    format!(
-                        "File size {} exceeds warning threshold {}",
-                        format_size(file_size),
-                        format_size(warn_size)
-                    ),
+                    format!("File exceeds warning threshold {}", format_size(warn_size)),
                     Severity::Warning,
                 )
                 .with_actual_value(format_size(file_size))
-                .with_expected_value(format!("≤ {}", format_size(warn_size))),
+                .with_expected_value(format!("≤ {}", format_size(warn_size)))
+                .with_sort_key(file_size),
             );
         }
 

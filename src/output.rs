@@ -3,6 +3,7 @@ use crate::error::Result;
 use crate::rules::{Severity, Violation};
 use colored::*;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -109,31 +110,54 @@ impl OutputFormatter {
         elapsed: Duration,
     ) -> Result<()> {
         let mut stdout = io::stdout();
+        let gutter = "┃".dimmed();
 
-        for violation in violations {
-            let severity_icon = match violation.severity {
-                Severity::Error => "✗".red().bold(),
-                Severity::Warning => "⚠".yellow().bold(),
-            };
-            let path_str = self.relative_path(&violation.path);
-            let rule_info = format!(
-                "[{}:{}]",
-                violation.rule_name,
-                match violation.severity {
-                    Severity::Error => "error",
-                    Severity::Warning => "warning",
+        let mut by_rule: BTreeMap<&str, Vec<&Violation>> = BTreeMap::new();
+        for v in violations {
+            by_rule.entry(&v.rule_name).or_default().push(v);
+        }
+
+        for (rule_name, rule_violations) in &by_rule {
+            writeln!(stdout, "{}", rule_name.bold())?;
+            writeln!(stdout, "{gutter}")?;
+
+            let mut errors: Vec<&Violation> = Vec::new();
+            let mut warnings: Vec<&Violation> = Vec::new();
+            for v in rule_violations {
+                match v.severity {
+                    Severity::Error => errors.push(v),
+                    Severity::Warning => warnings.push(v),
                 }
-            )
-            .dimmed();
+            }
+            errors.sort_by(|a, b| b.sort_key.cmp(&a.sort_key));
+            warnings.sort_by(|a, b| b.sort_key.cmp(&a.sort_key));
 
-            writeln!(
-                stdout,
-                "{} {}: {} {}",
-                severity_icon,
-                path_str.bold(),
-                violation.message,
-                rule_info
-            )?;
+            for (severity_group, marker, color_fn) in [
+                (
+                    &errors,
+                    "[E]",
+                    ColoredString::red as fn(ColoredString) -> ColoredString,
+                ),
+                (&warnings, "[W]", ColoredString::yellow),
+            ] {
+                if severity_group.is_empty() {
+                    continue;
+                }
+                let message = &severity_group[0].message;
+                writeln!(stdout, "{gutter} {} {}", color_fn(marker.bold()), message)?;
+                for v in severity_group {
+                    let path_str = self.relative_path(&v.path);
+                    match &v.actual_value {
+                        Some(actual) => {
+                            writeln!(stdout, "{gutter}     {} ({})", path_str.bold(), actual)?;
+                        }
+                        None => {
+                            writeln!(stdout, "{gutter}     {}", path_str.bold())?;
+                        }
+                    }
+                }
+            }
+            writeln!(stdout)?;
         }
 
         if !self.quiet {
