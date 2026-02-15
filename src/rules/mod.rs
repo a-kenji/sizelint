@@ -121,6 +121,10 @@ pub trait Rule: Send + Sync {
     fn name(&self) -> &str;
     fn description(&self) -> &str;
     fn check(&self, path: &Path) -> Result<Vec<Violation>>;
+    fn check_blob(&self, path: &Path, size: u64) -> Result<Vec<Violation>> {
+        let _ = (path, size);
+        Ok(vec![])
+    }
     fn is_enabled(&self) -> bool;
     fn as_any(&self) -> &dyn std::any::Any;
 }
@@ -182,6 +186,62 @@ impl RuleEngine {
             paths.len()
         );
         Ok(all_violations)
+    }
+
+    pub fn check_history_blobs(&self, blobs: &[crate::git::HistoryBlob]) -> Result<Vec<Violation>> {
+        let mut violations = Vec::new();
+
+        for blob in blobs {
+            let path = Path::new(&blob.path);
+
+            let mut matching_rules: Vec<(&Box<dyn Rule>, Option<i32>)> = Vec::new();
+            for rule in &self.rules {
+                if rule.is_enabled()
+                    && let Some(configurable_rule) =
+                        rule.as_any().downcast_ref::<ConfigurableRule>()
+                    && !configurable_rule.should_skip_file(path)
+                {
+                    matching_rules.push((rule, configurable_rule.get_priority()));
+                }
+            }
+
+            if matching_rules.is_empty() {
+                continue;
+            }
+
+            matching_rules.sort_by(|a, b| match (a.1, b.1) {
+                (Some(p1), Some(p2)) => p2.cmp(&p1),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            });
+
+            let blob_violations = matching_rules[0].0.check_blob(path, blob.size)?;
+
+            for mut v in blob_violations {
+                v.message = format!(
+                    "{} blob persists in git history (commit {})",
+                    format_size(blob.size),
+                    blob.commit,
+                );
+                violations.push(v);
+            }
+        }
+
+        // Per-path deduplication: keep only the largest violation per file path
+        let mut best: std::collections::HashMap<std::path::PathBuf, Violation> =
+            std::collections::HashMap::new();
+        for v in violations {
+            best.entry(v.path.clone())
+                .and_modify(|existing| {
+                    if v.sort_key > existing.sort_key {
+                        *existing = v.clone();
+                    }
+                })
+                .or_insert(v);
+        }
+
+        Ok(best.into_values().collect())
     }
 
     pub fn get_rules(&self) -> &[Box<dyn Rule>] {
@@ -397,6 +457,52 @@ impl Rule for ConfigurableRule {
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn check_blob(&self, path: &Path, size: u64) -> Result<Vec<Violation>> {
+        let mut violations = Vec::new();
+
+        if self.should_skip_file(path) {
+            return Ok(violations);
+        }
+
+        if let Some(max_size) = self.max_size
+            && size > max_size
+        {
+            violations.push(
+                Violation::new(
+                    path.to_path_buf(),
+                    self.name.clone(),
+                    format!(
+                        "Blob exceeds maximum allowed size {}",
+                        format_size(max_size)
+                    ),
+                    Severity::Error,
+                )
+                .with_actual_value(format_size(size))
+                .with_expected_value(format!("≤ {}", format_size(max_size)))
+                .with_sort_key(size),
+            );
+            return Ok(violations);
+        }
+
+        if let Some(warn_size) = self.warn_size
+            && size > warn_size
+        {
+            violations.push(
+                Violation::new(
+                    path.to_path_buf(),
+                    self.name.clone(),
+                    format!("Blob exceeds warning threshold {}", format_size(warn_size)),
+                    Severity::Warning,
+                )
+                .with_actual_value(format_size(size))
+                .with_expected_value(format!("≤ {}", format_size(warn_size)))
+                .with_sort_key(size),
+            );
+        }
+
+        Ok(violations)
     }
 
     fn check(&self, path: &Path) -> Result<Vec<Violation>> {

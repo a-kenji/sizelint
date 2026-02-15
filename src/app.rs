@@ -82,6 +82,9 @@ impl App {
 
     fn run_check(&self, paths: Vec<PathBuf>) -> Result<()> {
         let start = std::time::Instant::now();
+        let git_range = self.active_git_range();
+        let check_root = self.check_root(&paths)?;
+
         let files = if paths.is_empty() {
             self.discover_files()?
         } else {
@@ -89,7 +92,108 @@ impl App {
             // override. Files pass through, directories get walked.
             self.resolve_paths(paths)?
         };
-        self.validate_and_check_files(files, start)
+
+        if files.is_empty() && git_range.is_none() {
+            print_success("No files to check");
+            return Ok(());
+        }
+
+        let file_count = files.len();
+        if file_count > 0 {
+            print_progress(&format!("Found {} files to check", file_count));
+        }
+
+        debug!("Setting up rules...");
+        let rule_engine = self.create_rule_engine()?;
+
+        debug!("Running checks...");
+        let mut violations = if file_count > 0 {
+            rule_engine.check_files(&files)?
+        } else {
+            vec![]
+        };
+
+        // Phase 2: walk git history for oversized blobs
+        if let Some(range) = git_range
+            && !self.cli.get_no_history()
+        {
+            let discovery = FileDiscovery::new(&check_root, &self.config.sizelint.excludes)?;
+            let history_blobs = discovery.discover_history_blobs(&range)?;
+            if !history_blobs.is_empty() {
+                print_progress(&format!(
+                    "Scanning {} blob(s) from git history",
+                    history_blobs.len()
+                ));
+                let blob_violations = rule_engine.check_history_blobs(&history_blobs)?;
+                violations.extend(blob_violations);
+            }
+        }
+
+        // Deduplicate across phases: keep only the largest violation per path.
+        // Phase 1 entries come first, so equal sort_keys preserve Phase 1.
+        let mut best: std::collections::HashMap<std::path::PathBuf, crate::rules::Violation> =
+            std::collections::HashMap::new();
+        for v in violations {
+            best.entry(v.path.clone())
+                .and_modify(|existing| {
+                    if v.sort_key > existing.sort_key {
+                        *existing = v.clone();
+                    }
+                })
+                .or_insert(v);
+        }
+        let violations: Vec<_> = best.into_values().collect();
+
+        self.output_results_and_exit(&violations, file_count, start.elapsed())
+    }
+
+    /// Root directory for git operations.
+    ///
+    /// When explicit paths are given, discovers the git repo for each and
+    /// verifies they all share the same root. Errors if paths span multiple
+    /// repos and `--git` is active.
+    fn check_root(&self, paths: &[PathBuf]) -> Result<PathBuf> {
+        if paths.is_empty() {
+            return std::env::current_dir()
+                .map_err(|e| SizelintError::CurrentDirectory { source: e });
+        }
+
+        let git_active = self.active_git_range().is_some();
+        let mut roots = HashSet::new();
+        let mut first_root = None;
+
+        for p in paths {
+            let dir = if p.is_dir() {
+                p.clone()
+            } else {
+                p.parent().unwrap_or(p).to_path_buf()
+            };
+
+            if let Ok(repo) = GitRepo::discover(&dir) {
+                let root = repo.root().to_path_buf();
+                if first_root.is_none() {
+                    first_root = Some(root.clone());
+                }
+                roots.insert(root);
+            }
+        }
+
+        if git_active && roots.len() > 1 {
+            return Err(GitError::MultipleRepos {
+                roots: roots.into_iter().collect(),
+            }
+            .into());
+        }
+
+        first_root.or_else(|| {
+            let p = &paths[0];
+            Some(if p.is_dir() { p.clone() } else { p.parent().unwrap_or(p).to_path_buf() })
+        }).ok_or_else(|| {
+            GitError::RepoNotFound {
+                path: paths[0].clone(),
+            }
+            .into()
+        })
     }
 
     fn resolve_paths(&self, paths: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
@@ -113,6 +217,11 @@ impl App {
         Ok(files)
     }
 
+    /// Returns the active git range if --git or config git is in effect.
+    fn active_git_range(&self) -> Option<String> {
+        self.cli.get_git().or(self.config.sizelint.git.clone())
+    }
+
     fn discover_files(&self) -> Result<Vec<PathBuf>> {
         let current_dir =
             std::env::current_dir().map_err(|e| SizelintError::CurrentDirectory { source: e })?;
@@ -123,35 +232,27 @@ impl App {
         if self.cli.get_staged()
             || (self.config.sizelint.check_staged && discovery.is_in_git_repo())
         {
+            print_progress("Checking staged files (git diff --staged)");
             discovery.discover_staged_files()
         } else if self.cli.get_working_tree()
             || (self.config.sizelint.check_working_tree && discovery.is_in_git_repo())
         {
+            print_progress("Checking working tree files (git diff)");
             discovery.discover_working_tree_files()
+        } else if let Some(range) = self.cli.get_git().or(self.config.sizelint.git.clone()) {
+            let commit_count = discovery
+                .git_repo()
+                .map(|r| r.count_commits_in_range(&range).unwrap_or(0))
+                .unwrap_or(0);
+            print_progress(&format!(
+                "Checking git range: {range} ({commit_count} commit{})",
+                if commit_count == 1 { "" } else { "s" }
+            ));
+            discovery.discover_git_diff_files(&range)
         } else {
+            print_progress("Checking all files (directory walk)");
             discovery.discover_files(self.config.sizelint.respect_gitignore)
         }
-    }
-
-    fn validate_and_check_files(
-        &self,
-        files: Vec<PathBuf>,
-        start: std::time::Instant,
-    ) -> Result<()> {
-        if files.is_empty() {
-            print_success("No files to check");
-            return Ok(());
-        }
-
-        print_progress(&format!("Found {} files to check", files.len()));
-
-        debug!("Setting up rules...");
-        let rule_engine = self.create_rule_engine()?;
-
-        debug!("Running checks...");
-        let violations = rule_engine.check_files(&files)?;
-
-        self.output_results_and_exit(&violations, files.len(), start.elapsed())
     }
 
     fn output_results_and_exit(
