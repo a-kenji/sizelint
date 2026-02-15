@@ -1,5 +1,5 @@
-max_file_size = "10MB"
-warn_file_size = "5MB"
+max_file_size = "2MB"
+warn_file_size = "1MB"
 excludes = []
 check_staged = false
 check_working_tree = false
@@ -7,7 +7,7 @@ respect_gitignore = true
 fail_on_warn = false
 
 [rules.medium_files]
-enabled = true
+enabled = false
 description = "Base rule that fits many normal repos"
 priority = 50
 max_size = "5MB"
