@@ -1,6 +1,48 @@
-use crate::error::{Result, SizelintError};
+use miette::Diagnostic;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use thiserror::Error;
+
+#[derive(Error, Debug, Diagnostic)]
+pub enum GitError {
+    #[error("Git repository not found at {path}")]
+    #[diagnostic(
+        code(sizelint::git::repo_not_found),
+        help("Make sure you're running sizelint from within a git repository")
+    )]
+    RepoNotFound { path: PathBuf },
+
+    #[error("Git ref '{git_ref}' not found in {repo}")]
+    #[diagnostic(
+        code(sizelint::git::ref_not_found),
+        help("Check that the branch or ref exists in the target repository")
+    )]
+    RefNotFound { git_ref: String, repo: PathBuf },
+
+    #[error("Paths span multiple git repositories")]
+    #[diagnostic(
+        code(sizelint::git::multiple_repos),
+        help("All paths must be in the same git repository when using --git")
+    )]
+    MultipleRepos { roots: Vec<PathBuf> },
+
+    #[error("Git command failed: {command} (exit code {exit_code})\n{stderr}")]
+    #[diagnostic(code(sizelint::git::command_failed))]
+    CommandFailed {
+        command: String,
+        exit_code: i32,
+        stderr: String,
+    },
+
+    #[error("Failed to execute git")]
+    #[diagnostic(
+        code(sizelint::git::exec),
+        help("Check that git is installed and on your PATH")
+    )]
+    Exec(#[source] std::io::Error),
+}
+
+type Result<T> = std::result::Result<T, GitError>;
 
 #[derive(Debug, Clone)]
 pub struct HistoryBlob {
@@ -22,12 +64,10 @@ impl GitRepo {
             .arg("--show-toplevel")
             .current_dir(path)
             .output()
-            .map_err(|e| {
-                SizelintError::filesystem("execute git command".to_string(), path.to_path_buf(), e)
-            })?;
+            .map_err(GitError::Exec)?;
 
         if !output.status.success() {
-            return Err(SizelintError::GitRepoNotFound {
+            return Err(GitError::RepoNotFound {
                 path: path.to_path_buf(),
             });
         }
@@ -55,84 +95,32 @@ impl GitRepo {
 
     pub fn get_staged_files(&self) -> Result<Vec<PathBuf>> {
         let command = "git diff --staged --name-only --diff-filter=ACMRT";
-        let output = Command::new("git")
-            .arg("diff")
-            .arg("--staged")
-            .arg("--name-only")
-            .arg("--diff-filter=ACMRT")
-            .current_dir(&self.root)
-            .output()
-            .map_err(|e| {
-                SizelintError::filesystem("execute git command".to_string(), self.root.clone(), e)
-            })?;
+        let output = self.exec(&["diff", "--staged", "--name-only", "--diff-filter=ACMRT"])?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            return Err(SizelintError::git_command_failed(
-                command.to_string(),
-                output.status.code().unwrap_or(-1),
-                stderr,
-            ));
+            return Err(self.command_failed(command, &output));
         }
 
-        let files = String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter(|line| !line.is_empty())
-            .map(|line| self.root.join(line))
-            .collect();
-
-        Ok(files)
+        Ok(self.parse_paths(&output.stdout))
     }
 
     pub fn get_working_tree_files(&self) -> Result<Vec<PathBuf>> {
         let command = "git diff --name-only --diff-filter=ACMRT";
-        let output = Command::new("git")
-            .arg("diff")
-            .arg("--name-only")
-            .arg("--diff-filter=ACMRT")
-            .current_dir(&self.root)
-            .output()
-            .map_err(|e| {
-                SizelintError::filesystem("execute git command".to_string(), self.root.clone(), e)
-            })?;
+        let output = self.exec(&["diff", "--name-only", "--diff-filter=ACMRT"])?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            return Err(SizelintError::git_command_failed(
-                command.to_string(),
-                output.status.code().unwrap_or(-1),
-                stderr,
-            ));
+            return Err(self.command_failed(command, &output));
         }
 
-        let files = String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter(|line| !line.is_empty())
-            .map(|line| self.root.join(line))
-            .collect();
-
-        Ok(files)
+        Ok(self.parse_paths(&output.stdout))
     }
 
     pub fn get_all_files(&self) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
         let command = "git status --porcelain=v1 --untracked-files=no";
-        let output = Command::new("git")
-            .arg("status")
-            .arg("--porcelain=v1")
-            .arg("--untracked-files=no")
-            .current_dir(&self.root)
-            .output()
-            .map_err(|e| {
-                SizelintError::filesystem("execute git command".to_string(), self.root.clone(), e)
-            })?;
+        let output = self.exec(&["status", "--porcelain=v1", "--untracked-files=no"])?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            return Err(SizelintError::git_command_failed(
-                command.to_string(),
-                output.status.code().unwrap_or(-1),
-                stderr,
-            ));
+            return Err(self.command_failed(command, &output));
         }
 
         let mut staged = Vec::new();
@@ -365,6 +353,30 @@ impl GitRepo {
             .output()
             .map(|output| output.status.success())
             .unwrap_or(false)
+    }
+
+    fn exec(&self, args: &[&str]) -> Result<std::process::Output> {
+        Command::new("git")
+            .args(args)
+            .current_dir(&self.root)
+            .output()
+            .map_err(GitError::Exec)
+    }
+
+    fn command_failed(&self, command: &str, output: &std::process::Output) -> GitError {
+        GitError::CommandFailed {
+            command: command.to_string(),
+            exit_code: output.status.code().unwrap_or(-1),
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        }
+    }
+
+    fn parse_paths(&self, stdout: &[u8]) -> Vec<PathBuf> {
+        String::from_utf8_lossy(stdout)
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(|line| self.root.join(line))
+            .collect()
     }
 }
 

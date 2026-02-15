@@ -109,9 +109,10 @@ impl FileDiscovery {
                 let staged_files = git_repo.get_staged_files()?;
                 Ok(self.filter_files(staged_files))
             }
-            None => Err(SizelintError::GitRepoNotFound {
+            None => Err(crate::git::GitError::RepoNotFound {
                 path: self.root.clone(),
-            }),
+            }
+            .into()),
         }
     }
 
@@ -121,9 +122,10 @@ impl FileDiscovery {
                 let working_files = git_repo.get_working_tree_files()?;
                 Ok(self.filter_files(working_files))
             }
-            None => Err(SizelintError::GitRepoNotFound {
+            None => Err(crate::git::GitError::RepoNotFound {
                 path: self.root.clone(),
-            }),
+            }
+            .into()),
         }
     }
 

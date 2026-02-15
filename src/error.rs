@@ -4,31 +4,9 @@ use thiserror::Error;
 
 #[derive(Error, Debug, Diagnostic)]
 pub enum SizelintError {
-    // Git-related errors
-    #[error("Git repository not found at {path}")]
-    #[diagnostic(
-        code(sizelint::git::repo_not_found),
-        help("Make sure you're running sizelint from within a git repository")
-    )]
-    GitRepoNotFound { path: PathBuf },
-
-    #[error("Git command failed: {command} (exit code {exit_code})")]
-    #[diagnostic(
-        code(sizelint::git::command_failed),
-        help("Check if git is installed and the repository is valid")
-    )]
-    GitCommandFailed {
-        command: String,
-        exit_code: i32,
-        stderr: String,
-    },
-
-    #[error("Git repository has no {file_type} files")]
-    #[diagnostic(
-        code(sizelint::git::no_files),
-        help("Try staging some files with 'git add' or check your working directory")
-    )]
-    GitNoFiles { file_type: String },
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    Git(#[from] crate::git::GitError),
 
     // Configuration errors
     #[error("Config file not found")]
@@ -133,20 +111,6 @@ pub enum SizelintError {
 pub type Result<T> = miette::Result<T, SizelintError>;
 
 impl SizelintError {
-    pub fn git_command_failed(command: String, exit_code: i32, stderr: String) -> Self {
-        Self::GitCommandFailed {
-            command,
-            exit_code,
-            stderr,
-        }
-    }
-
-    pub fn git_no_files(file_type: impl Into<String>) -> Self {
-        Self::GitNoFiles {
-            file_type: file_type.into(),
-        }
-    }
-
     pub fn config_read(path: PathBuf, source: std::io::Error) -> Self {
         Self::ConfigRead { path, source }
     }

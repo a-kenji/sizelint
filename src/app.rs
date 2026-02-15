@@ -2,9 +2,11 @@ use crate::cli::{Cli, Commands, RuleAction};
 use crate::config::Config;
 use crate::discovery::FileDiscovery;
 use crate::error::{Result, SizelintError};
+use crate::git::{GitError, GitRepo};
 use crate::output::{OutputFormatter, print_error, print_progress, print_success};
 use crate::rules::{ConfigurableRule, RuleEngine};
 use colored::*;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process;
 use tracing::{Level, debug, span};
@@ -185,15 +187,21 @@ impl App {
             .into());
         }
 
-        first_root.or_else(|| {
-            let p = &paths[0];
-            Some(if p.is_dir() { p.clone() } else { p.parent().unwrap_or(p).to_path_buf() })
-        }).ok_or_else(|| {
-            GitError::RepoNotFound {
-                path: paths[0].clone(),
-            }
-            .into()
-        })
+        first_root
+            .or_else(|| {
+                let p = &paths[0];
+                Some(if p.is_dir() {
+                    p.clone()
+                } else {
+                    p.parent().unwrap_or(p).to_path_buf()
+                })
+            })
+            .ok_or_else(|| {
+                GitError::RepoNotFound {
+                    path: paths[0].clone(),
+                }
+                .into()
+            })
     }
 
     fn resolve_paths(&self, paths: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
