@@ -46,8 +46,6 @@ Options:
 
       --log-level <LOG_LEVEL>
           Log level
-          
-          [default: info]
 
           Possible values:
           - trace: Trace level logging
@@ -55,6 +53,8 @@ Options:
           - info:  Info level logging
           - warn:  Warning level logging
           - error: Error level logging
+          
+          [default: info]
 
   -h, --help
           Print help (see a summary with '-h')
@@ -82,19 +82,24 @@ Options:
 
   -f, --format <FORMAT>
           Output format
-          
-          [default: human]
 
           Possible values:
-          - human:   Human-readable output
-          - json:    JSON output
-          - summary: Summary only
+          - human: Human-readable output
+          - json:  JSON output
+          
+          [default: human]
 
       --staged
           Check only staged files (git diff --staged)
 
       --working-tree
           Check working tree files
+
+      --git <RANGE>
+          Check files changed in a git revision range (e.g. "main", "main..HEAD", "main...feature")
+
+      --no-history
+          Skip git history scanning for deleted blobs (only check files at HEAD)
 
   -q, --quiet
           Quiet mode (only show violations)
