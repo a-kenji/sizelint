@@ -109,9 +109,10 @@ impl FileDiscovery {
                 let staged_files = git_repo.get_staged_files()?;
                 Ok(self.filter_files(staged_files))
             }
-            None => Err(SizelintError::GitRepoNotFound {
+            None => Err(crate::git::GitError::RepoNotFound {
                 path: self.root.clone(),
-            }),
+            }
+            .into()),
         }
     }
 
@@ -121,9 +122,42 @@ impl FileDiscovery {
                 let working_files = git_repo.get_working_tree_files()?;
                 Ok(self.filter_files(working_files))
             }
-            None => Err(SizelintError::GitRepoNotFound {
+            None => Err(crate::git::GitError::RepoNotFound {
                 path: self.root.clone(),
-            }),
+            }
+            .into()),
+        }
+    }
+
+    pub fn discover_git_diff_files(&self, range: &str) -> Result<Vec<PathBuf>> {
+        match &self.git_repo {
+            Some(git_repo) => {
+                let diff_files = git_repo.get_diff_files(range)?;
+                Ok(self.filter_files(diff_files))
+            }
+            None => Err(crate::git::GitError::RepoNotFound {
+                path: self.root.clone(),
+            }
+            .into()),
+        }
+    }
+
+    pub fn discover_history_blobs(&self, range: &str) -> Result<Vec<crate::git::HistoryBlob>> {
+        match &self.git_repo {
+            Some(git_repo) => {
+                let blobs = git_repo.walk_history_blobs(range)?;
+                Ok(blobs
+                    .into_iter()
+                    .filter(|blob| {
+                        let path = Path::new(&blob.path);
+                        !self.excludes.is_match(path)
+                    })
+                    .collect())
+            }
+            None => Err(crate::git::GitError::RepoNotFound {
+                path: self.root.clone(),
+            }
+            .into()),
         }
     }
 

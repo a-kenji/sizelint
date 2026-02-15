@@ -26,6 +26,7 @@ let
       scdoc
       installShellFiles
     ];
+    nativeCheckInputs = [ pkgs.git ];
     inherit version name pname;
     src = lib.fileset.toSource {
       inherit root fileset;

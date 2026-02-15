@@ -56,8 +56,16 @@ pub enum Commands {
         staged: bool,
 
         /// Check working tree files
-        #[arg(long)]
+        #[arg(long, conflicts_with = "git")]
         working_tree: bool,
+
+        /// Check files changed in a git revision range (e.g. "main", "main..HEAD", "main...feature")
+        #[arg(long, value_name = "RANGE", conflicts_with_all = ["staged", "working_tree"])]
+        git: Option<String>,
+
+        /// Skip git history scanning for deleted blobs (only check files at HEAD)
+        #[arg(long, requires = "git")]
+        no_history: bool,
 
         /// Quiet mode (only show violations)
         #[arg(short, long)]
@@ -169,6 +177,20 @@ impl Cli {
     pub fn get_working_tree(&self) -> bool {
         match &self.command {
             Commands::Check { working_tree, .. } => *working_tree,
+            _ => false,
+        }
+    }
+
+    pub fn get_git(&self) -> Option<String> {
+        match &self.command {
+            Commands::Check { git, .. } => git.clone(),
+            _ => None,
+        }
+    }
+
+    pub fn get_no_history(&self) -> bool {
+        match &self.command {
+            Commands::Check { no_history, .. } => *no_history,
             _ => false,
         }
     }

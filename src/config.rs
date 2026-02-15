@@ -39,6 +39,10 @@ pub struct SizelintConfig {
     #[serde(default)]
     pub check_working_tree: bool,
 
+    /// Default git revision range for file discovery
+    #[serde(default)]
+    pub git: Option<String>,
+
     /// Respect .gitignore patterns
     #[serde(default = "default_true")]
     pub respect_gitignore: bool,
@@ -101,6 +105,9 @@ impl SizelintConfig {
         }
         self.check_staged = other.check_staged;
         self.check_working_tree = other.check_working_tree;
+        if other.git.is_some() {
+            self.git = other.git;
+        }
         self.respect_gitignore = other.respect_gitignore;
         self.fail_on_warn = other.fail_on_warn;
     }
