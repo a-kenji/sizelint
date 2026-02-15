@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: nixos/nix-installer-action@main
+      - uses: nixos/nix-installer-action@06919331f77d29cd5254bbc9df033ea07232d89a
       - uses: cachix/cachix-action@v16
         with:
           name: kenji
@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: nixos/nix-installer-action@main
+      - uses: nixos/nix-installer-action@06919331f77d29cd5254bbc9df033ea07232d89a
       - uses: cachix/cachix-action@v16
         with:
           name: kenji
@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: nixos/nix-installer-action@main
+      - uses: nixos/nix-installer-action@06919331f77d29cd5254bbc9df033ea07232d89a
       - uses: cachix/cachix-action@v16
         with:
           name: kenji
@@ -71,7 +71,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: nixos/nix-installer-action@main
+      - uses: nixos/nix-installer-action@06919331f77d29cd5254bbc9df033ea07232d89a
       - uses: cachix/cachix-action@v16
         with:
           name: kenji
@@ -89,7 +89,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: nixos/nix-installer-action@main
+      - uses: nixos/nix-installer-action@06919331f77d29cd5254bbc9df033ea07232d89a
       - uses: cachix/cachix-action@v16
         with:
           name: kenji
@@ -107,7 +107,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: nixos/nix-installer-action@main
+      - uses: nixos/nix-installer-action@06919331f77d29cd5254bbc9df033ea07232d89a
       - uses: cachix/cachix-action@v16
         with:
           name: kenji
@@ -125,7 +125,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: nixos/nix-installer-action@main
+      - uses: nixos/nix-installer-action@06919331f77d29cd5254bbc9df033ea07232d89a
       - uses: cachix/cachix-action@v16
         with:
           name: kenji
