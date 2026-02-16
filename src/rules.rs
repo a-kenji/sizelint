@@ -1,10 +1,8 @@
 use crate::config::RuleDefinition;
 use crate::error::{Result, SizelintError};
-use miette::Diagnostic;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use thiserror::Error;
 use tracing::{Level, debug, span};
 
 // Size constants using binary multipliers
@@ -33,8 +31,7 @@ pub struct RuleInfo {
     pub error_on_match: bool,
 }
 
-#[derive(Debug, Clone, Error)]
-#[error("{message}")]
+#[derive(Debug, Clone)]
 pub struct Violation {
     pub path: std::path::PathBuf,
     pub rule_name: String,
@@ -76,38 +73,6 @@ impl Violation {
     pub fn with_sort_key(mut self, key: u64) -> Self {
         self.sort_key = key;
         self
-    }
-
-    pub fn diagnostic_code(&self) -> String {
-        format!(
-            "sizelint::{}::{}",
-            self.rule_name,
-            match self.severity {
-                Severity::Error => "error",
-                Severity::Warning => "warning",
-            }
-        )
-    }
-}
-
-impl Diagnostic for Violation {
-    fn code<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
-        Some(Box::new(self.diagnostic_code()))
-    }
-
-    fn help<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
-        if let (Some(actual), Some(expected)) = (&self.actual_value, &self.expected_value) {
-            Some(Box::new(format!("Actual: {actual}, Expected: {expected}")))
-        } else {
-            None
-        }
-    }
-
-    fn severity(&self) -> Option<miette::Severity> {
-        match self.severity {
-            Severity::Error => Some(miette::Severity::Error),
-            Severity::Warning => Some(miette::Severity::Warning),
-        }
     }
 }
 
