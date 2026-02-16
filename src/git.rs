@@ -191,13 +191,21 @@ impl GitRepo {
         Ok(self.parse_paths(&output.stdout))
     }
 
-    /// List all commits in a range, oldest first, skipping merges.
-    pub fn list_commits_in_range(&self, range: &str) -> Result<Vec<String>> {
+    /// Skips merges and submodule entries (mode 160000).
+    fn collect_history_entries(&self, range: &str) -> Result<Vec<BlobEntry>> {
         let expanded = self.expand_git_range(range)?;
-        let command = format!("git rev-list --no-merges --reverse {expanded}");
+        let command = format!(
+            "git log --raw --diff-filter=ACMRT --no-merges --format=format:COMMIT%t%h {expanded}"
+        );
 
         let output = Command::new("git")
-            .args(["rev-list", "--no-merges", "--reverse"])
+            .args([
+                "log",
+                "--raw",
+                "--diff-filter=ACMRT",
+                "--no-merges",
+                "--format=format:COMMIT\t%h",
+            ])
             .arg(&expanded)
             .current_dir(&self.root)
             .output()
@@ -207,42 +215,17 @@ impl GitRepo {
             return Err(self.command_failed(&command, &output));
         }
 
-        Ok(String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter(|line| !line.is_empty())
-            .map(|line| line.to_string())
-            .collect())
-    }
-
-    /// Parse blobs added/modified in a single commit via `git diff-tree`.
-    /// Returns entries without sizes (resolved later via batch).
-    /// Skips submodule entries (mode 160000).
-    fn get_changed_entries_in_commit(&self, commit: &str) -> Result<Vec<BlobEntry>> {
-        let command = format!("git diff-tree --no-commit-id -r --diff-filter=ACMRT {commit}");
-
-        let output = Command::new("git")
-            .args([
-                "diff-tree",
-                "--no-commit-id",
-                "-r",
-                "--diff-filter=ACMRT",
-                commit,
-            ])
-            .current_dir(&self.root)
-            .output()
-            .map_err(GitError::Exec)?;
-
-        if !output.status.success() {
-            return Err(self.command_failed(&command, &output));
-        }
-
-        let short_commit = &commit[..commit.len().min(12)];
         let mut entries = Vec::new();
+        let mut current_commit = String::new();
 
-        // Each line: :<old_mode> <new_mode> <old_hash> <new_hash> <status>\t<path>
         for line in String::from_utf8_lossy(&output.stdout).lines() {
-            let line = line.trim();
-            if line.is_empty() {
+            if let Some(hash) = line.strip_prefix("COMMIT\t") {
+                current_commit = hash.to_string();
+                continue;
+            }
+
+            // diff-tree raw lines: :<old_mode> <new_mode> <old_hash> <new_hash> <status>\t<path>
+            if !line.starts_with(':') {
                 continue;
             }
 
@@ -263,7 +246,7 @@ impl GitRepo {
             entries.push(BlobEntry {
                 blob_hash: parts[3].to_string(),
                 path: self.root.join(path).to_string_lossy().to_string(),
-                commit: short_commit.to_string(),
+                commit: current_commit.clone(),
             });
         }
 
@@ -336,13 +319,10 @@ impl GitRepo {
     }
 
     /// Walk every commit in the range and collect all added/modified blobs.
-    /// Blob sizes are resolved in a single batch process.
+    /// Uses a single `git log --raw` + single `git cat-file --batch-check`
+    /// (2 total spawns regardless of commit count).
     pub fn walk_history_blobs(&self, range: &str) -> Result<Vec<HistoryBlob>> {
-        let commits = self.list_commits_in_range(range)?;
-        let mut entries = Vec::new();
-        for commit in &commits {
-            entries.extend(self.get_changed_entries_in_commit(commit)?);
-        }
+        let entries = self.collect_history_entries(range)?;
 
         if entries.is_empty() {
             return Ok(vec![]);
