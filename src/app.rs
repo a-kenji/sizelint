@@ -52,7 +52,7 @@ impl App {
                 current_dir.display()
             );
 
-            if let Some(config_path) = Config::find_config_file(&current_dir)? {
+            if let Some(config_path) = Config::find_config_file(&current_dir) {
                 debug!("Found config file: {}", config_path.display());
                 print_progress(&format!("Found config file: {}", config_path.display()));
                 Config::load_with_defaults(config_path)?
