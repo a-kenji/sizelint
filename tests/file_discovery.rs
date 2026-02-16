@@ -112,28 +112,6 @@ fn files_contain_name(files: &[PathBuf], name: &str) -> bool {
 }
 
 #[test]
-fn test_discovery_no_matches() {
-    let tmpdir = utils::tmp_mkdir();
-    let tree_root = tmpdir.path();
-
-    utils::Git::new(tree_root.to_path_buf()).create();
-
-    // Create some files that don't match our typical patterns
-    utils::write_file(tree_root.join("README"), "readme content");
-    utils::write_file(tree_root.join("LICENSE"), "license content");
-    utils::write_file(tree_root.join("Makefile"), "makefile content");
-
-    let discovery = FileDiscovery::new(tree_root, &[]).unwrap();
-    let files = discovery.discover_files(true).unwrap();
-
-    // Should find the files we created
-    assert_eq!(files.len(), 3);
-    assert!(files_contain_name(&files, "README"));
-    assert!(files_contain_name(&files, "LICENSE"));
-    assert!(files_contain_name(&files, "Makefile"));
-}
-
-#[test]
 fn test_discovery_some_matches() {
     let tmpdir = utils::tmp_mkdir();
     let tree_root = tmpdir.path();

@@ -8,14 +8,6 @@ pub enum SizelintError {
     #[diagnostic(transparent)]
     Git(#[from] crate::git::GitError),
 
-    // Configuration errors
-    #[error("Config file not found")]
-    #[diagnostic(
-        code(sizelint::config::not_found),
-        help("Create a sizelint.toml file or use --config to specify a custom path")
-    )]
-    ConfigNotFound { paths: Vec<PathBuf> },
-
     #[error("Failed to read config file {path}")]
     #[diagnostic(
         code(sizelint::config::read_error),
@@ -77,26 +69,12 @@ pub enum SizelintError {
         source: std::io::Error,
     },
 
-    // Rule execution errors
-    #[error("Rule '{rule}' failed on {path}: {message}")]
-    #[diagnostic(code(sizelint::rule::execution_failed))]
-    RuleExecution {
-        rule: String,
-        path: PathBuf,
-        message: String,
-    },
-
     #[error("Invalid size format '{input}': {reason}")]
     #[diagnostic(
         code(sizelint::rule::invalid_size_format),
         help("Use formats like: 10MB, 1GB, 500KB, 1024B")
     )]
     InvalidSizeFormat { input: String, reason: String },
-
-    // File discovery errors
-    #[error("File discovery failed in {path}: {message}")]
-    #[diagnostic(code(sizelint::discovery::failed))]
-    FileDiscovery { path: PathBuf, message: String },
 
     // Auto-converted errors for external types
     #[error("JSON serialization error: {0}")]
@@ -139,19 +117,7 @@ impl SizelintError {
         }
     }
 
-    pub fn rule_execution(rule: String, path: PathBuf, message: String) -> Self {
-        Self::RuleExecution {
-            rule,
-            path,
-            message,
-        }
-    }
-
     pub fn invalid_size_format(input: String, reason: String) -> Self {
         Self::InvalidSizeFormat { input, reason }
-    }
-
-    pub fn file_discovery(path: PathBuf, message: String) -> Self {
-        Self::FileDiscovery { path, message }
     }
 }

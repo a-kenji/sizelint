@@ -120,10 +120,6 @@ impl RulesConfig {
         }
     }
 
-    pub fn get_rule(&self, name: &str) -> Option<&RuleDefinition> {
-        self.rules.get(name)
-    }
-
     pub fn get_enabled_rules(&self) -> Vec<(&String, &RuleDefinition)> {
         self.rules.iter().filter(|(_, rule)| rule.enabled).collect()
     }
@@ -186,32 +182,8 @@ impl Config {
         None
     }
 
-    pub fn save_to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let content = toml::to_string_pretty(self).map_err(|e| {
-            SizelintError::config_invalid(
-                "serialization".to_string(),
-                "config".to_string(),
-                format!("Failed to serialize config: {e}"),
-            )
-        })?;
-
-        std::fs::write(path.as_ref(), content).map_err(|e| {
-            SizelintError::filesystem(
-                "write config file".to_string(),
-                path.as_ref().to_path_buf(),
-                e,
-            )
-        })?;
-
-        Ok(())
-    }
-
     pub fn create_default_config() -> String {
         DEFAULT_CONFIG_TOML.to_string()
-    }
-
-    pub fn default_config_str() -> &'static str {
-        DEFAULT_CONFIG_TOML
     }
 }
 

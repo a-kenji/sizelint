@@ -226,7 +226,3 @@ pub fn print_error(message: &str) {
 pub fn print_success(message: &str) {
     eprintln!("{} {}", "✓".green().bold(), message.green());
 }
-
-pub fn print_warning(message: &str) {
-    eprintln!("{} {}", "⚠".yellow().bold(), message.yellow());
-}
