@@ -8,7 +8,7 @@ use crate::rules::{ConfigurableRule, RuleEngine};
 use colored::*;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::process;
+use std::process::ExitCode;
 use tracing::{Level, debug, span};
 
 pub struct App {
@@ -67,7 +67,7 @@ impl App {
         Ok(config)
     }
 
-    pub fn run(&self) -> Result<()> {
+    pub fn run(&self) -> Result<ExitCode> {
         match self.cli.get_command() {
             Commands::Check { paths, .. } => self.run_check(paths),
             Commands::Init {
@@ -76,13 +76,16 @@ impl App {
                 edit,
             } => self.run_init(force, stdout, edit),
             Commands::Rules { action } => self.run_rules(action),
-            Commands::Completions { shell } => Cli::generate_completion(&shell).map_err(|e| {
-                SizelintError::config_invalid("shell".to_string(), shell.to_string(), e)
-            }),
+            Commands::Completions { shell } => {
+                Cli::generate_completion(&shell).map_err(|e| {
+                    SizelintError::config_invalid("shell".to_string(), shell.to_string(), e)
+                })?;
+                Ok(ExitCode::SUCCESS)
+            }
         }
     }
 
-    fn run_check(&self, paths: Vec<PathBuf>) -> Result<()> {
+    fn run_check(&self, paths: Vec<PathBuf>) -> Result<ExitCode> {
         let start = std::time::Instant::now();
         let git_range = self.active_git_range();
         let check_root = self.check_root(&paths)?;
@@ -97,7 +100,7 @@ impl App {
 
         if files.is_empty() && git_range.is_none() {
             print_success("No files to check");
-            return Ok(());
+            return Ok(ExitCode::SUCCESS);
         }
 
         let file_count = files.len();
@@ -146,7 +149,7 @@ impl App {
         }
         let violations: Vec<_> = best.into_values().collect();
 
-        self.output_results_and_exit(&violations, file_count, start.elapsed())
+        self.output_results(&violations, file_count, start.elapsed())
     }
 
     /// Root directory for git operations.
@@ -263,12 +266,12 @@ impl App {
         }
     }
 
-    fn output_results_and_exit(
+    fn output_results(
         &self,
         violations: &[crate::rules::Violation],
         file_count: usize,
         elapsed: std::time::Duration,
-    ) -> Result<()> {
+    ) -> Result<ExitCode> {
         let cwd =
             std::env::current_dir().map_err(|e| SizelintError::CurrentDirectory { source: e })?;
         let formatter = OutputFormatter::new(self.cli.get_format(), self.cli.get_quiet(), cwd);
@@ -285,19 +288,19 @@ impl App {
                 .any(|v| matches!(v.severity, crate::rules::Severity::Warning));
 
             if has_errors || (fail_on_warn && has_warnings) {
-                process::exit(1);
+                return Ok(ExitCode::FAILURE);
             }
         }
 
-        Ok(())
+        Ok(ExitCode::SUCCESS)
     }
 
-    fn run_init(&self, force: bool, stdout: bool, edit: bool) -> Result<()> {
+    fn run_init(&self, force: bool, stdout: bool, edit: bool) -> Result<ExitCode> {
         let default_config = Config::create_default_config();
 
         if stdout {
             println!("{default_config}");
-            return Ok(());
+            return Ok(ExitCode::SUCCESS);
         }
 
         let config_file = PathBuf::from("sizelint.toml");
@@ -305,12 +308,13 @@ impl App {
         if config_file.exists() && !force {
             if edit {
                 print_progress(&format!("Opening existing {}", config_file.display()));
-                return self.open_editor(&config_file);
+                self.open_editor(&config_file)?;
+                return Ok(ExitCode::SUCCESS);
             } else {
                 print_error(
                     "sizelint.toml already exists. Use --force to overwrite or --edit to open existing file.",
                 );
-                process::exit(1);
+                return Ok(ExitCode::FAILURE);
             }
         }
 
@@ -328,7 +332,7 @@ impl App {
             );
         }
 
-        Ok(())
+        Ok(ExitCode::SUCCESS)
     }
 
     fn open_editor(&self, file_path: &PathBuf) -> Result<()> {
@@ -360,7 +364,7 @@ impl App {
         Ok(())
     }
 
-    fn run_rules(&self, action: RuleAction) -> Result<()> {
+    fn run_rules(&self, action: RuleAction) -> Result<ExitCode> {
         match action {
             RuleAction::List => {
                 let rule_engine = self.create_rule_engine()?;
@@ -368,7 +372,7 @@ impl App {
 
                 if rule_info.is_empty() {
                     println!("No rules configured or available.");
-                    return Ok(());
+                    return Ok(ExitCode::SUCCESS);
                 }
 
                 println!("{}", "Configured Rules:".bold().blue());
@@ -537,12 +541,12 @@ impl App {
                     }
                 } else {
                     print_error(&format!("Unknown rule: {rule}"));
-                    process::exit(1);
+                    return Ok(ExitCode::FAILURE);
                 }
             }
         }
 
-        Ok(())
+        Ok(ExitCode::SUCCESS)
     }
 
     fn create_rule_engine(&self) -> Result<RuleEngine> {
