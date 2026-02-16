@@ -187,7 +187,7 @@ impl FileDiscovery {
     fn filter_files(&self, files: Vec<PathBuf>) -> Vec<PathBuf> {
         files
             .into_par_iter()
-            .filter(|path| !self.excludes.is_match(path))
+            .filter(|path| path.exists() && !self.excludes.is_match(path))
             .collect()
     }
 
