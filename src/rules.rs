@@ -189,49 +189,55 @@ impl RuleEngine {
     }
 
     pub fn check_history_blobs(&self, blobs: &[crate::git::HistoryBlob]) -> Result<Vec<Violation>> {
-        let mut violations = Vec::new();
+        let violations: Result<Vec<_>> = blobs
+            .par_iter()
+            .map(|blob| {
+                let path = Path::new(&blob.path);
 
-        for blob in blobs {
-            let path = Path::new(&blob.path);
-
-            let mut matching_rules: Vec<(&Box<dyn Rule>, Option<i32>)> = Vec::new();
-            for rule in &self.rules {
-                if rule.is_enabled()
-                    && let Some(configurable_rule) =
-                        rule.as_any().downcast_ref::<ConfigurableRule>()
-                    && !configurable_rule.should_skip_file(path)
-                {
-                    matching_rules.push((rule, configurable_rule.get_priority()));
+                let mut matching_rules: Vec<(&Box<dyn Rule>, Option<i32>)> = Vec::new();
+                for rule in &self.rules {
+                    if rule.is_enabled()
+                        && let Some(configurable_rule) =
+                            rule.as_any().downcast_ref::<ConfigurableRule>()
+                        && !configurable_rule.should_skip_file(path)
+                    {
+                        matching_rules.push((rule, configurable_rule.get_priority()));
+                    }
                 }
-            }
 
-            if matching_rules.is_empty() {
-                continue;
-            }
+                if matching_rules.is_empty() {
+                    return Ok(vec![]);
+                }
 
-            matching_rules.sort_by(|a, b| match (a.1, b.1) {
-                (Some(p1), Some(p2)) => p2.cmp(&p1),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => std::cmp::Ordering::Equal,
-            });
+                matching_rules.sort_by(|a, b| match (a.1, b.1) {
+                    (Some(p1), Some(p2)) => p2.cmp(&p1),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
+                });
 
-            let blob_violations = matching_rules[0].0.check_blob(path, blob.size)?;
+                let blob_violations = matching_rules[0].0.check_blob(path, blob.size)?;
 
-            for mut v in blob_violations {
-                v.message = format!(
-                    "{} blob persists in git history (commit {})",
-                    format_size(blob.size),
-                    blob.commit,
-                );
-                violations.push(v);
-            }
-        }
+                Ok(blob_violations
+                    .into_iter()
+                    .map(|mut v| {
+                        v.message = format!(
+                            "{} blob persists in git history (commit {})",
+                            format_size(blob.size),
+                            blob.commit,
+                        );
+                        v
+                    })
+                    .collect::<Vec<_>>())
+            })
+            .collect();
+
+        let all_violations: Vec<Violation> = violations?.into_iter().flatten().collect();
 
         // Per-path deduplication: keep only the largest violation per file path
         let mut best: std::collections::HashMap<std::path::PathBuf, Violation> =
             std::collections::HashMap::new();
-        for v in violations {
+        for v in all_violations {
             best.entry(v.path.clone())
                 .and_modify(|existing| {
                     if v.sort_key > existing.sort_key {
