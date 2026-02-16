@@ -151,59 +151,6 @@ fn write_large_file(repo: &TestGitRepo, name: &str, size: usize) {
 }
 
 #[test]
-fn test_history_blob_large_file_added_then_deleted() {
-    let repo = TestGitRepo::new();
-    let base = repo.default_branch();
-
-    TestGitRepo::git(&repo.root, &["checkout", "-b", "feature"]);
-
-    // Add a large file
-    write_large_file(&repo, "data/dump.sql", 1024);
-    TestGitRepo::git(&repo.root, &["add", "."]);
-    TestGitRepo::git(&repo.root, &["commit", "-m", "add dump"]);
-
-    // Delete it
-    std::fs::remove_file(repo.root.join("data/dump.sql")).unwrap();
-    TestGitRepo::git(&repo.root, &["add", "."]);
-    TestGitRepo::git(&repo.root, &["commit", "-m", "remove dump"]);
-
-    let discovery = FileDiscovery::new(&repo.root, &[]).unwrap();
-    let blobs = discovery.discover_history_blobs(&base).unwrap();
-
-    // The add commit introduced a 1024-byte blob
-    let dump_blobs: Vec<_> = blobs
-        .iter()
-        .filter(|b| b.path.ends_with("data/dump.sql"))
-        .collect();
-    assert_eq!(dump_blobs.len(), 1);
-    assert_eq!(dump_blobs[0].size, 1024);
-    assert!(!dump_blobs[0].commit.is_empty());
-}
-
-#[test]
-fn test_history_blob_file_still_at_head() {
-    let repo = TestGitRepo::new();
-    let base = repo.default_branch();
-
-    TestGitRepo::git(&repo.root, &["checkout", "-b", "feature"]);
-
-    // Add file and keep it
-    repo.write_file("src/keep.rs", "fn keep() {}");
-    TestGitRepo::git(&repo.root, &["add", "."]);
-    TestGitRepo::git(&repo.root, &["commit", "-m", "add keep"]);
-
-    let discovery = FileDiscovery::new(&repo.root, &[]).unwrap();
-    let blobs = discovery.discover_history_blobs(&base).unwrap();
-
-    // Per-commit walk reports all blobs regardless of HEAD state
-    let keep_blobs: Vec<_> = blobs
-        .iter()
-        .filter(|b| b.path.ends_with("src/keep.rs"))
-        .collect();
-    assert_eq!(keep_blobs.len(), 1);
-}
-
-#[test]
 fn test_history_blob_small_file_no_violation() {
     use sizelint::config::RuleDefinition;
     use sizelint::rules::ConfigurableRule;

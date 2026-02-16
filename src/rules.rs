@@ -1,10 +1,8 @@
 use crate::config::RuleDefinition;
 use crate::error::{Result, SizelintError};
-use miette::Diagnostic;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use thiserror::Error;
 use tracing::{Level, debug, span};
 
 // Size constants using binary multipliers
@@ -33,8 +31,7 @@ pub struct RuleInfo {
     pub error_on_match: bool,
 }
 
-#[derive(Debug, Clone, Error)]
-#[error("{message}")]
+#[derive(Debug, Clone)]
 pub struct Violation {
     pub path: std::path::PathBuf,
     pub rule_name: String,
@@ -77,38 +74,6 @@ impl Violation {
         self.sort_key = key;
         self
     }
-
-    pub fn diagnostic_code(&self) -> String {
-        format!(
-            "sizelint::{}::{}",
-            self.rule_name,
-            match self.severity {
-                Severity::Error => "error",
-                Severity::Warning => "warning",
-            }
-        )
-    }
-}
-
-impl Diagnostic for Violation {
-    fn code<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
-        Some(Box::new(self.diagnostic_code()))
-    }
-
-    fn help<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
-        if let (Some(actual), Some(expected)) = (&self.actual_value, &self.expected_value) {
-            Some(Box::new(format!("Actual: {actual}, Expected: {expected}")))
-        } else {
-            None
-        }
-    }
-
-    fn severity(&self) -> Option<miette::Severity> {
-        match self.severity {
-            Severity::Error => Some(miette::Severity::Error),
-            Severity::Warning => Some(miette::Severity::Warning),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -117,20 +82,8 @@ pub enum Severity {
     Error,
 }
 
-pub trait Rule: Send + Sync {
-    fn name(&self) -> &str;
-    fn description(&self) -> &str;
-    fn check(&self, path: &Path) -> Result<Vec<Violation>>;
-    fn check_blob(&self, path: &Path, size: u64) -> Result<Vec<Violation>> {
-        let _ = (path, size);
-        Ok(vec![])
-    }
-    fn is_enabled(&self) -> bool;
-    fn as_any(&self) -> &dyn std::any::Any;
-}
-
 pub struct RuleEngine {
-    rules: Vec<Box<dyn Rule>>,
+    rules: Vec<ConfigurableRule>,
 }
 
 impl RuleEngine {
@@ -138,38 +91,27 @@ impl RuleEngine {
         Self { rules: Vec::new() }
     }
 
-    pub fn add_rule<R: Rule + 'static>(&mut self, rule: R) {
-        self.rules.push(Box::new(rule));
+    pub fn add_rule(&mut self, rule: ConfigurableRule) {
+        self.rules.push(rule);
+    }
+
+    fn best_rule_for(&self, path: &Path) -> Option<&ConfigurableRule> {
+        self.rules
+            .iter()
+            .filter(|r| r.is_enabled() && !r.should_skip_file(path))
+            .max_by(|a, b| match (a.get_priority(), b.get_priority()) {
+                (Some(p1), Some(p2)) => p1.cmp(&p2),
+                (Some(_), None) => std::cmp::Ordering::Greater,
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (None, None) => std::cmp::Ordering::Equal,
+            })
     }
 
     pub fn check_file(&self, path: &Path) -> Result<Vec<Violation>> {
-        let mut violations = Vec::new();
-        let mut matching_rules = Vec::new();
-
-        // Find all rules that would apply to this file
-        for rule in &self.rules {
-            if rule.is_enabled()
-                && let Some(configurable_rule) = rule.as_any().downcast_ref::<ConfigurableRule>()
-                && !configurable_rule.should_skip_file(path)
-            {
-                matching_rules.push((rule, configurable_rule.get_priority()));
-            }
+        match self.best_rule_for(path) {
+            Some(rule) => rule.check(path),
+            None => Ok(vec![]),
         }
-
-        if !matching_rules.is_empty() {
-            // Sort by priority
-            matching_rules.sort_by(|a, b| match (a.1, b.1) {
-                (Some(p1), Some(p2)) => p2.cmp(&p1),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => std::cmp::Ordering::Equal,
-            });
-
-            let rule_violations = matching_rules[0].0.check(path)?;
-            violations.extend(rule_violations);
-        }
-
-        Ok(violations)
     }
 
     pub fn check_files(&self, paths: &[std::path::PathBuf]) -> Result<Vec<Violation>> {
@@ -194,29 +136,11 @@ impl RuleEngine {
             .map(|blob| {
                 let path = Path::new(&blob.path);
 
-                let mut matching_rules: Vec<(&Box<dyn Rule>, Option<i32>)> = Vec::new();
-                for rule in &self.rules {
-                    if rule.is_enabled()
-                        && let Some(configurable_rule) =
-                            rule.as_any().downcast_ref::<ConfigurableRule>()
-                        && !configurable_rule.should_skip_file(path)
-                    {
-                        matching_rules.push((rule, configurable_rule.get_priority()));
-                    }
-                }
-
-                if matching_rules.is_empty() {
+                let Some(rule) = self.best_rule_for(path) else {
                     return Ok(vec![]);
-                }
+                };
 
-                matching_rules.sort_by(|a, b| match (a.1, b.1) {
-                    (Some(p1), Some(p2)) => p2.cmp(&p1),
-                    (Some(_), None) => std::cmp::Ordering::Less,
-                    (None, Some(_)) => std::cmp::Ordering::Greater,
-                    (None, None) => std::cmp::Ordering::Equal,
-                });
-
-                let blob_violations = matching_rules[0].0.check_blob(path, blob.size)?;
+                let blob_violations = rule.check_blob(path, blob.size)?;
 
                 Ok(blob_violations
                     .into_iter()
@@ -250,50 +174,12 @@ impl RuleEngine {
         Ok(best.into_values().collect())
     }
 
-    pub fn get_rules(&self) -> &[Box<dyn Rule>] {
-        &self.rules
-    }
-
-    pub fn get_enabled_rules(&self) -> Vec<&dyn Rule> {
-        self.rules
-            .iter()
-            .filter(|rule| rule.is_enabled())
-            .map(|rule| rule.as_ref())
-            .collect()
-    }
-
     pub fn get_rule_info(&self) -> Vec<RuleInfo> {
-        self.rules
-            .iter()
-            .map(|rule| {
-                // Try to downcast to ConfigurableRule to get detailed info
-                if let Some(configurable_rule) = rule.as_any().downcast_ref::<ConfigurableRule>() {
-                    configurable_rule.get_rule_info()
-                } else {
-                    // Fallback for other rule types
-                    RuleInfo {
-                        name: rule.name().to_string(),
-                        description: rule.description().to_string(),
-                        enabled: rule.is_enabled(),
-                        priority: None,
-                        max_size: None,
-                        warn_size: None,
-                        max_size_str: None,
-                        warn_size_str: None,
-                        includes: vec![],
-                        excludes: vec![],
-                        warn_on_match: false,
-                        error_on_match: false,
-                    }
-                }
-            })
-            .collect()
+        self.rules.iter().map(|rule| rule.get_rule_info()).collect()
     }
 
     pub fn get_all_rule_info(&self, config: &crate::config::Config) -> Vec<RuleInfo> {
-        let mut all_rules = Vec::new();
-
-        all_rules.extend(self.get_rule_info());
+        let mut all_rules = self.get_rule_info();
 
         if let Some(rules_config) = &config.rules {
             for (name, rule_def) in &rules_config.rules {
@@ -446,26 +332,16 @@ impl ConfigurableRule {
             error_on_match: self.definition.error_on_match,
         }
     }
-}
 
-impl Rule for ConfigurableRule {
-    fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.name
     }
 
-    fn description(&self) -> &str {
-        &self.definition.description
-    }
-
-    fn is_enabled(&self) -> bool {
+    pub fn is_enabled(&self) -> bool {
         self.definition.enabled
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn check_blob(&self, path: &Path, size: u64) -> Result<Vec<Violation>> {
+    pub fn check_blob(&self, path: &Path, size: u64) -> Result<Vec<Violation>> {
         let mut violations = Vec::new();
 
         if self.should_skip_file(path) {
@@ -511,7 +387,7 @@ impl Rule for ConfigurableRule {
         Ok(violations)
     }
 
-    fn check(&self, path: &Path) -> Result<Vec<Violation>> {
+    pub fn check(&self, path: &Path) -> Result<Vec<Violation>> {
         let mut violations = Vec::new();
 
         if self.should_skip_file(path) {

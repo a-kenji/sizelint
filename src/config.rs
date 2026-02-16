@@ -120,10 +120,6 @@ impl RulesConfig {
         }
     }
 
-    pub fn get_rule(&self, name: &str) -> Option<&RuleDefinition> {
-        self.rules.get(name)
-    }
-
     pub fn get_enabled_rules(&self) -> Vec<(&String, &RuleDefinition)> {
         self.rules.iter().filter(|(_, rule)| rule.enabled).collect()
     }
@@ -170,64 +166,24 @@ impl Config {
         }
     }
 
-    pub fn load_from_dir<P: AsRef<Path>>(dir: P) -> Result<Option<Self>> {
-        for filename in CONFIG_FILENAMES {
-            let config_path = dir.as_ref().join(filename);
-            if config_path.exists() {
-                return Ok(Some(Self::load_from_file(config_path)?));
-            }
-        }
-
-        Ok(None)
-    }
-
-    pub fn find_config_file<P: AsRef<Path>>(start_dir: P) -> Result<Option<PathBuf>> {
+    pub fn find_config_file<P: AsRef<Path>>(start_dir: P) -> Option<PathBuf> {
         let mut current_dir = start_dir.as_ref().to_path_buf();
-
         loop {
-            if (Self::load_from_dir(&current_dir)?).is_some() {
-                for filename in CONFIG_FILENAMES {
-                    let config_path = current_dir.join(filename);
-                    if config_path.exists() {
-                        return Ok(Some(config_path));
-                    }
+            for filename in CONFIG_FILENAMES {
+                let config_path = current_dir.join(filename);
+                if config_path.exists() {
+                    return Some(config_path);
                 }
             }
-
             if !current_dir.pop() {
                 break;
             }
         }
-
-        Ok(None)
-    }
-
-    pub fn save_to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let content = toml::to_string_pretty(self).map_err(|e| {
-            SizelintError::config_invalid(
-                "serialization".to_string(),
-                "config".to_string(),
-                format!("Failed to serialize config: {e}"),
-            )
-        })?;
-
-        std::fs::write(path.as_ref(), content).map_err(|e| {
-            SizelintError::filesystem(
-                "write config file".to_string(),
-                path.as_ref().to_path_buf(),
-                e,
-            )
-        })?;
-
-        Ok(())
+        None
     }
 
     pub fn create_default_config() -> String {
         DEFAULT_CONFIG_TOML.to_string()
-    }
-
-    pub fn default_config_str() -> &'static str {
-        DEFAULT_CONFIG_TOML
     }
 }
 

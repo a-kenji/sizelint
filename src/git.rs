@@ -83,16 +83,6 @@ impl GitRepo {
         &self.root
     }
 
-    pub fn is_in_git_repo<P: AsRef<Path>>(path: P) -> bool {
-        Command::new("git")
-            .arg("rev-parse")
-            .arg("--is-inside-work-tree")
-            .current_dir(path)
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-    }
-
     pub fn get_staged_files(&self) -> Result<Vec<PathBuf>> {
         let command = "git diff --staged --name-only --diff-filter=ACMRT";
         let output = self.exec(&["diff", "--staged", "--name-only", "--diff-filter=ACMRT"])?;
@@ -113,35 +103,6 @@ impl GitRepo {
         }
 
         Ok(self.parse_paths(&output.stdout))
-    }
-
-    pub fn get_all_files(&self) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
-        let command = "git status --porcelain=v1 --untracked-files=no";
-        let output = self.exec(&["status", "--porcelain=v1", "--untracked-files=no"])?;
-
-        if !output.status.success() {
-            return Err(self.command_failed(command, &output));
-        }
-
-        let mut staged = Vec::new();
-        let mut working_tree = Vec::new();
-
-        for line in String::from_utf8_lossy(&output.stdout).lines() {
-            if line.len() >= 3 {
-                let path = self.root.join(&line[3..]);
-                let status = &line[..2];
-
-                if !status.starts_with(' ') {
-                    staged.push(path.clone());
-                }
-
-                if status.chars().nth(1).unwrap() != ' ' {
-                    working_tree.push(path);
-                }
-            }
-        }
-
-        Ok((staged, working_tree))
     }
 
     /// Count the number of commits in a range.
@@ -337,22 +298,6 @@ impl GitRepo {
             blobs.extend(self.get_changed_blobs_in_commit(commit)?);
         }
         Ok(blobs)
-    }
-
-    pub fn is_file_tracked<P: AsRef<Path>>(&self, path: P) -> bool {
-        let relative_path = match path.as_ref().strip_prefix(&self.root) {
-            Ok(p) => p,
-            Err(_) => return false,
-        };
-
-        Command::new("git")
-            .arg("ls-files")
-            .arg("--error-unmatch")
-            .arg(relative_path)
-            .current_dir(&self.root)
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
     }
 
     fn exec(&self, args: &[&str]) -> Result<std::process::Output> {

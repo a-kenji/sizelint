@@ -6,8 +6,8 @@ description = "Lint your working tree based on file size"
 license = "MIT"
 authors = ["Alexander Kenji Berthold"]
 documentation = "https://github.com/a-kenji/sizelint"
-homepage = "https://github.com/documentation/sizelint"
-repository = "https://github.com/documentation/sizelint"
+homepage = "https://github.com/a-kenji/sizelint"
+repository = "https://github.com/a-kenji/sizelint"
 keywords = ["git", "linter", "formatter", "file-size", "ci-cd"]
 categories = [
   "command-line-utilities",
