@@ -1,6 +1,7 @@
 use miette::Diagnostic;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use thiserror::Error;
 
 #[derive(Error, Debug, Diagnostic)]
@@ -49,6 +50,12 @@ pub struct HistoryBlob {
     pub path: String,
     pub size: u64,
     pub commit: String,
+}
+
+struct BlobEntry {
+    blob_hash: String,
+    path: String,
+    commit: String,
 }
 
 pub struct GitRepo {
@@ -207,9 +214,10 @@ impl GitRepo {
             .collect())
     }
 
-    /// Get blobs added/modified in a single commit via `git diff-tree`.
+    /// Parse blobs added/modified in a single commit via `git diff-tree`.
+    /// Returns entries without sizes (resolved later via batch).
     /// Skips submodule entries (mode 160000).
-    pub fn get_changed_blobs_in_commit(&self, commit: &str) -> Result<Vec<HistoryBlob>> {
+    fn get_changed_entries_in_commit(&self, commit: &str) -> Result<Vec<BlobEntry>> {
         let command = format!("git diff-tree --no-commit-id -r --diff-filter=ACMRT {commit}");
 
         let output = Command::new("git")
@@ -229,7 +237,7 @@ impl GitRepo {
         }
 
         let short_commit = &commit[..commit.len().min(12)];
-        let mut blobs = Vec::new();
+        let mut entries = Vec::new();
 
         // Each line: :<old_mode> <new_mode> <old_hash> <new_hash> <status>\t<path>
         for line in String::from_utf8_lossy(&output.stdout).lines() {
@@ -238,7 +246,6 @@ impl GitRepo {
                 continue;
             }
 
-            // Split on tab to separate metadata from path
             let Some((meta, path)) = line.split_once('\t') else {
                 continue;
             };
@@ -249,55 +256,109 @@ impl GitRepo {
             }
 
             // parts[1] is the new mode — skip submodules
-            let new_mode = parts[1];
-            if new_mode == "160000" {
+            if parts[1] == "160000" {
                 continue;
             }
 
-            // parts[3] is the new blob hash
-            let blob_hash = parts[3];
-
-            let size = self.get_blob_size_by_hash(blob_hash)?;
-
-            blobs.push(HistoryBlob {
+            entries.push(BlobEntry {
+                blob_hash: parts[3].to_string(),
                 path: self.root.join(path).to_string_lossy().to_string(),
-                size,
                 commit: short_commit.to_string(),
             });
         }
 
-        Ok(blobs)
+        Ok(entries)
     }
 
-    fn get_blob_size_by_hash(&self, blob_hash: &str) -> Result<u64> {
-        let output = Command::new("git")
-            .args(["cat-file", "-s", blob_hash])
+    /// Resolve blob sizes in batch via a single `git cat-file --batch-check`
+    /// process instead of spawning one process per blob.
+    fn batch_blob_sizes(&self, entries: &[BlobEntry]) -> Result<Vec<u64>> {
+        let mut child = Command::new("git")
+            .args(["cat-file", "--batch-check"])
             .current_dir(&self.root)
-            .output()
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(GitError::Exec)?;
+
+        // Write hashes on a separate thread to avoid deadlock: with many
+        // blobs the stdout pipe buffer fills while we're still writing to
+        // stdin, blocking both sides.
+        let stdin = child.stdin.take().unwrap();
+        let hashes: Vec<String> = entries.iter().map(|e| e.blob_hash.clone()).collect();
+        let writer_thread = std::thread::spawn(move || -> std::io::Result<()> {
+            let mut writer = std::io::BufWriter::new(stdin);
+            for hash in &hashes {
+                writeln!(writer, "{hash}")?;
+            }
+            Ok(())
+        });
+
+        let output = child.wait_with_output().map_err(GitError::Exec)?;
+        writer_thread
+            .join()
+            .expect("stdin writer thread panicked")
             .map_err(GitError::Exec)?;
 
         if !output.status.success() {
-            return Err(self.command_failed(&format!("git cat-file -s {blob_hash}"), &output));
+            return Err(self.command_failed("git cat-file --batch-check", &output));
         }
 
-        String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .parse::<u64>()
-            .map_err(|_| GitError::CommandFailed {
-                command: format!("git cat-file -s {blob_hash}"),
-                exit_code: -1,
-                stderr: "Could not parse blob size".to_string(),
+        // Each output line: "<hash> <type> <size>" or "<hash> missing"
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        stdout
+            .lines()
+            .zip(entries)
+            .map(|(line, entry)| {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                match parts.as_slice() {
+                    [_, _, size_str] => {
+                        size_str
+                            .parse::<u64>()
+                            .map_err(|_| GitError::CommandFailed {
+                                command: format!(
+                                    "git cat-file --batch-check ({})",
+                                    entry.blob_hash
+                                ),
+                                exit_code: -1,
+                                stderr: format!("Could not parse blob size from: {line}"),
+                            })
+                    }
+                    _ => Err(GitError::CommandFailed {
+                        command: format!("git cat-file --batch-check ({})", entry.blob_hash),
+                        exit_code: -1,
+                        stderr: format!("Unexpected output: {line}"),
+                    }),
+                }
             })
+            .collect()
     }
 
     /// Walk every commit in the range and collect all added/modified blobs.
+    /// Blob sizes are resolved in a single batch process.
     pub fn walk_history_blobs(&self, range: &str) -> Result<Vec<HistoryBlob>> {
         let commits = self.list_commits_in_range(range)?;
-        let mut blobs = Vec::new();
+        let mut entries = Vec::new();
         for commit in &commits {
-            blobs.extend(self.get_changed_blobs_in_commit(commit)?);
+            entries.extend(self.get_changed_entries_in_commit(commit)?);
         }
-        Ok(blobs)
+
+        if entries.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let sizes = self.batch_blob_sizes(&entries)?;
+
+        Ok(entries
+            .into_iter()
+            .zip(sizes)
+            .map(|(entry, size)| HistoryBlob {
+                path: entry.path,
+                size,
+                commit: entry.commit,
+            })
+            .collect())
     }
 
     fn exec(&self, args: &[&str]) -> Result<std::process::Output> {

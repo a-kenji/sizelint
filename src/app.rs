@@ -91,11 +91,23 @@ impl App {
         let check_root = self.check_root(&paths)?;
 
         let files = if paths.is_empty() {
-            self.discover_files()?
+            self.discover_files_at(&check_root)?
         } else {
-            // Explicit paths: use them directly without staged/working-tree
-            // override. Files pass through, directories get walked.
-            self.resolve_paths(paths)?
+            // Explicit files pass through; directories use the same
+            // git-aware discovery as the no-paths case.
+            let mut files = Vec::new();
+            let mut dirs = Vec::new();
+            for path in paths {
+                if path.is_file() {
+                    files.push(path);
+                } else if path.is_dir() {
+                    dirs.push(path);
+                }
+            }
+            for dir in &dirs {
+                files.extend(self.discover_files_at(dir)?);
+            }
+            files
         };
 
         if files.is_empty() && git_range.is_none() {
@@ -207,36 +219,13 @@ impl App {
             })
     }
 
-    fn resolve_paths(&self, paths: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
-        let mut files = Vec::new();
-        let mut dirs = Vec::new();
-
-        for path in paths {
-            if path.is_file() {
-                files.push(path);
-            } else if path.is_dir() {
-                dirs.push(path);
-            }
-        }
-
-        if !dirs.is_empty() {
-            let root = dirs.first().unwrap();
-            let discovery = FileDiscovery::new(root, &self.config.sizelint.excludes)?;
-            files.extend(discovery.discover_specific_paths(&dirs)?);
-        }
-
-        Ok(files)
-    }
-
     /// Returns the active git range if --git or config git is in effect.
     fn active_git_range(&self) -> Option<String> {
         self.cli.get_git().or(self.config.sizelint.git.clone())
     }
 
-    fn discover_files(&self) -> Result<Vec<PathBuf>> {
-        let current_dir =
-            std::env::current_dir().map_err(|e| SizelintError::CurrentDirectory { source: e })?;
-        let discovery = FileDiscovery::new(&current_dir, &self.config.sizelint.excludes)?;
+    fn discover_files_at(&self, root: &std::path::Path) -> Result<Vec<PathBuf>> {
+        let discovery = FileDiscovery::new(root, &self.config.sizelint.excludes)?;
 
         debug!("Discovering files...");
 
