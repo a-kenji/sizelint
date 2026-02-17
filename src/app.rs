@@ -36,13 +36,13 @@ impl App {
                 "Loading config from subcommand-specified path: {}",
                 config_path.display()
             );
-            Config::load_from_file(&config_path)?
+            Config::load_with_defaults(&config_path)?
         } else if let Some(config_path) = &cli.config {
             debug!(
                 "Loading config from global config path: {}",
                 config_path.display()
             );
-            Config::load_from_file(config_path)?
+            Config::load_with_defaults(config_path)?
         } else {
             let current_dir = std::env::current_dir()
                 .map_err(|e| SizelintError::CurrentDirectory { source: e })?;
