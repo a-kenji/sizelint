@@ -160,8 +160,9 @@ impl App {
                 .or_insert(v);
         }
         let violations: Vec<_> = best.into_values().collect();
+        let suggestions = rule_engine.suggestions();
 
-        self.output_results(&violations, file_count, start.elapsed())
+        self.output_results(&violations, file_count, start.elapsed(), &suggestions)
     }
 
     /// Root directory for git operations.
@@ -260,11 +261,12 @@ impl App {
         violations: &[crate::rules::Violation],
         file_count: usize,
         elapsed: std::time::Duration,
+        suggestions: &std::collections::HashMap<&str, &str>,
     ) -> Result<ExitCode> {
         let cwd =
             std::env::current_dir().map_err(|e| SizelintError::CurrentDirectory { source: e })?;
         let formatter = OutputFormatter::new(self.cli.get_format(), self.cli.get_quiet(), cwd);
-        formatter.output_results(violations, file_count, elapsed)?;
+        formatter.output_results(violations, file_count, elapsed, suggestions)?;
 
         if !violations.is_empty() {
             let has_errors = violations
@@ -528,6 +530,10 @@ impl App {
                     if info.error_on_match {
                         println!("  Error on match: enabled");
                     }
+                    if let Some(suggestion) = &info.suggestion {
+                        println!();
+                        println!("{} {}", "Suggestion:".cyan().bold(), suggestion);
+                    }
                 } else {
                     print_error(&format!("Unknown rule: {rule}"));
                     return Ok(ExitCode::FAILURE);
@@ -548,6 +554,9 @@ impl App {
         if let Some(rules_config) = &self.config.rules {
             let enabled_rules = rules_config.get_enabled_rules();
             for (rule_name, rule_def) in enabled_rules {
+                if rule_name == "default" {
+                    continue;
+                }
                 let mut rule_definition = rule_def.clone();
 
                 if rule_definition.max_size.is_none() {
@@ -566,16 +575,23 @@ impl App {
     }
 
     fn add_default_rule(&self, engine: &mut RuleEngine) -> Result<()> {
-        use crate::config::RuleDefinition;
+        let config_def = self
+            .config
+            .rules
+            .as_ref()
+            .and_then(|r| r.rules.get("default"));
 
-        let default_rule = RuleDefinition {
+        let default_rule = crate::config::RuleDefinition {
             enabled: true,
-            description: "Default file size check".to_string(),
+            description: config_def
+                .map(|d| d.description.clone())
+                .unwrap_or_else(|| "Default file size check".to_string()),
             priority: 1000,
             max_size: self.config.sizelint.max_file_size.clone(),
             warn_size: self.config.sizelint.warn_file_size.clone(),
             includes: vec![],
             excludes: vec![],
+            suggestion: config_def.and_then(|d| d.suggestion.clone()),
             ..Default::default()
         };
 

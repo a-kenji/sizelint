@@ -6,6 +6,11 @@ check_working_tree = false
 respect_gitignore = true
 fail_on_warn = false
 
+[rules.default]
+enabled = true
+description = "Default file size check"
+suggestion = "Add the file to 'excludes' or adjust 'max_file_size' in sizelint.toml"
+
 [rules.medium_files]
 enabled = false
 description = "Base rule that fits many normal repos"
@@ -22,3 +27,4 @@ priority = 80
 includes = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp"]
 excludes = []
 warn_on_match = true
+suggestion = "Consider using Git LFS: git lfs track '*.png'"

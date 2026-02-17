@@ -29,6 +29,7 @@ pub struct RuleInfo {
     pub excludes: Vec<String>,
     pub warn_on_match: bool,
     pub error_on_match: bool,
+    pub suggestion: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -174,6 +175,18 @@ impl RuleEngine {
         Ok(best.into_values().collect())
     }
 
+    pub fn suggestions(&self) -> std::collections::HashMap<&str, &str> {
+        self.rules
+            .iter()
+            .filter_map(|r| {
+                r.definition
+                    .suggestion
+                    .as_deref()
+                    .map(|s| (r.name.as_str(), s))
+            })
+            .collect()
+    }
+
     pub fn get_rule_info(&self) -> Vec<RuleInfo> {
         self.rules.iter().map(|rule| rule.get_rule_info()).collect()
     }
@@ -206,6 +219,7 @@ impl RuleEngine {
                         excludes: rule_def.excludes.clone(),
                         warn_on_match: rule_def.warn_on_match,
                         error_on_match: rule_def.error_on_match,
+                        suggestion: rule_def.suggestion.clone(),
                     });
                 }
             }
@@ -330,6 +344,7 @@ impl ConfigurableRule {
             excludes: self.definition.excludes.clone(),
             warn_on_match: self.definition.warn_on_match,
             error_on_match: self.definition.error_on_match,
+            suggestion: self.definition.suggestion.clone(),
         }
     }
 
