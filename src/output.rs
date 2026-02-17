@@ -28,6 +28,8 @@ pub struct ViolationOutput {
     pub expected_value: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggestion: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
 }
 
 pub struct OutputFormatter {
@@ -98,6 +100,7 @@ impl OutputFormatter {
                     actual_value: v.actual_value.clone(),
                     expected_value: v.expected_value.clone(),
                     suggestion: suggestions.get(v.rule_name.as_str()).map(|s| s.to_string()),
+                    commit: v.commit.clone(),
                 }
             })
             .collect();
@@ -157,11 +160,28 @@ impl OutputFormatter {
                 writeln!(stdout, "{gutter} {} {}", color_fn(marker.bold()), message)?;
                 for v in severity_group {
                     let path_str = self.relative_path(&v.path);
-                    match &v.actual_value {
-                        Some(actual) => {
+                    match (&v.actual_value, &v.commit) {
+                        (Some(actual), Some(commit)) => {
+                            writeln!(
+                                stdout,
+                                "{gutter}     {} ({}, commit {})",
+                                path_str.bold(),
+                                actual,
+                                commit
+                            )?;
+                        }
+                        (Some(actual), None) => {
                             writeln!(stdout, "{gutter}     {} ({})", path_str.bold(), actual)?;
                         }
-                        None => {
+                        (None, Some(commit)) => {
+                            writeln!(
+                                stdout,
+                                "{gutter}     {} (commit {})",
+                                path_str.bold(),
+                                commit
+                            )?;
+                        }
+                        (None, None) => {
                             writeln!(stdout, "{gutter}     {}", path_str.bold())?;
                         }
                     }

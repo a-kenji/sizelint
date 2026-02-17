@@ -41,6 +41,7 @@ pub struct Violation {
     pub actual_value: Option<String>,
     pub expected_value: Option<String>,
     pub sort_key: u64,
+    pub commit: Option<String>,
 }
 
 impl Violation {
@@ -58,6 +59,7 @@ impl Violation {
             actual_value: None,
             expected_value: None,
             sort_key: 0,
+            commit: None,
         }
     }
 
@@ -146,11 +148,7 @@ impl RuleEngine {
                 Ok(blob_violations
                     .into_iter()
                     .map(|mut v| {
-                        v.message = format!(
-                            "{} blob persists in git history (commit {})",
-                            format_size(blob.size),
-                            blob.commit,
-                        );
+                        v.commit = Some(blob.commit.clone());
                         v
                     })
                     .collect::<Vec<_>>())
@@ -371,7 +369,7 @@ impl ConfigurableRule {
                     path.to_path_buf(),
                     self.name.clone(),
                     format!(
-                        "Blob exceeds maximum allowed size {}",
+                        "File exceeds maximum allowed size {}",
                         format_size(max_size)
                     ),
                     Severity::Error,
@@ -390,7 +388,7 @@ impl ConfigurableRule {
                 Violation::new(
                     path.to_path_buf(),
                     self.name.clone(),
-                    format!("Blob exceeds warning threshold {}", format_size(warn_size)),
+                    format!("File exceeds warning threshold {}", format_size(warn_size)),
                     Severity::Warning,
                 )
                 .with_actual_value(format_size(size))
