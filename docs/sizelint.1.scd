@@ -57,11 +57,8 @@ The tool is compatible with treefmt and supports parallel processing for perform
 *--config* _FILE_, *-c* _FILE_
 	Specify configuration file path. Default searches for *sizelint.toml* or *.sizelint.toml* in current directory and parent directories.
 
-*--verbose*, *-v*
-	Enable verbose output with additional debugging information.
-
-*--log-level* _LEVEL_
-	Set logging level. Options: *trace*, *debug*, *info*, *warn*, *error*. Default: *info*.
+*--debug*
+	Enable debug output. For fine-grained control, set the *SIZELINT_LOG* environment variable (uses tracing EnvFilter syntax, e.g. *SIZELINT_LOG=sizelint::config=trace*).
 
 # CONFIGURATION
 

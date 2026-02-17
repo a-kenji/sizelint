@@ -41,20 +41,8 @@ Options:
   -c, --config <FILE>
           Configuration file path
 
-  -v, --verbose
-          Verbose output
-
-      --log-level <LOG_LEVEL>
-          Log level
-
-          Possible values:
-          - trace: Trace level logging
-          - debug: Debug level logging
-          - info:  Info level logging
-          - warn:  Warning level logging
-          - error: Error level logging
-          
-          [default: info]
+      --debug
+          Enable debug output (or set SIZELINT_LOG for fine-grained control)
 
   -h, --help
           Print help (see a summary with '-h')
