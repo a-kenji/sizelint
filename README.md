@@ -38,29 +38,10 @@ Commands:
   help         Print this message or the help of the given subcommand(s)
 
 Options:
-  -c, --config <FILE>
-          Configuration file path
-
-  -v, --verbose
-          Verbose output
-
-      --log-level <LOG_LEVEL>
-          Log level
-
-          Possible values:
-          - trace: Trace level logging
-          - debug: Debug level logging
-          - info:  Info level logging
-          - warn:  Warning level logging
-          - error: Error level logging
-          
-          [default: info]
-
-  -h, --help
-          Print help (see a summary with '-h')
-
-  -V, --version
-          Print version
+  -c, --config <FILE>  Configuration file path
+      --debug          Enable debug output (or set SIZELINT_LOG for fine-grained control)
+  -h, --help           Print help
+  -V, --version        Print version
 ```
 
 ## `$ sizelint check`
@@ -175,16 +156,21 @@ Run `sizelint init` to create a default configuration:
 <!-- `$ nix run . -- init --stdout` -->
 
 ```
-max_file_size = "10MB"
-warn_file_size = "5MB"
+max_file_size = "2MB"
+warn_file_size = "1MB"
 excludes = []
 check_staged = false
 check_working_tree = false
 respect_gitignore = true
 fail_on_warn = false
 
-[rules.medium_files]
+[rules.default]
 enabled = true
+description = "Default file size check"
+suggestion = "Add the file to 'excludes' or adjust 'max_file_size' in sizelint.toml"
+
+[rules.medium_files]
+enabled = false
 description = "Base rule that fits many normal repos"
 priority = 50
 max_size = "5MB"
@@ -199,6 +185,7 @@ priority = 80
 includes = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp"]
 excludes = []
 warn_on_match = true
+suggestion = "Consider using Git LFS: git lfs track '*.png'"
 
 ```
 

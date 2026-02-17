@@ -3,12 +3,8 @@ use tracing_subscriber::{FmtSubscriber, filter::EnvFilter};
 
 const LOG_ENV: &str = "SIZELINT_LOG";
 
-pub fn init(
-    log_level: Option<&str>,
-    verbose: bool,
-    quiet: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let default_level = if verbose {
+pub fn init(debug: bool, quiet: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let default_level = if debug {
         Level::DEBUG
     } else if quiet {
         Level::WARN
@@ -26,12 +22,9 @@ pub fn init(
     if let Ok(env_filter) = EnvFilter::try_from_env(LOG_ENV) {
         let subscriber = subscriber.with_env_filter(env_filter).finish();
         tracing::subscriber::set_global_default(subscriber)?;
-    } else if let Some(level) = log_level {
-        let filter = EnvFilter::new(format!("sizelint={level}"));
-        let subscriber = subscriber.with_env_filter(filter).finish();
-        tracing::subscriber::set_global_default(subscriber)?;
     } else {
-        let subscriber = subscriber.finish();
+        let filter = EnvFilter::new(format!("sizelint={}", default_level));
+        let subscriber = subscriber.with_env_filter(filter).finish();
         tracing::subscriber::set_global_default(subscriber)?;
     }
 

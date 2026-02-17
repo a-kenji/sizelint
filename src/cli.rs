@@ -26,13 +26,9 @@ pub struct Cli {
     #[arg(short, long, value_name = "FILE")]
     pub config: Option<PathBuf>,
 
-    /// Verbose output
-    #[arg(short, long)]
-    pub verbose: bool,
-
-    /// Log level
-    #[arg(long, default_value = "info")]
-    pub log_level: LogLevel,
+    /// Enable debug output (or set SIZELINT_LOG for fine-grained control)
+    #[arg(long)]
+    pub debug: bool,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -120,32 +116,6 @@ pub enum OutputFormat {
     Human,
     /// JSON output
     Json,
-}
-
-#[derive(ValueEnum, Debug, Clone)]
-pub enum LogLevel {
-    /// Trace level logging
-    Trace,
-    /// Debug level logging
-    Debug,
-    /// Info level logging
-    Info,
-    /// Warning level logging
-    Warn,
-    /// Error level logging
-    Error,
-}
-
-impl LogLevel {
-    pub fn as_str(&self) -> &str {
-        match self {
-            LogLevel::Trace => "trace",
-            LogLevel::Debug => "debug",
-            LogLevel::Info => "info",
-            LogLevel::Warn => "warn",
-            LogLevel::Error => "error",
-        }
-    }
 }
 
 impl Cli {

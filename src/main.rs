@@ -5,8 +5,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    if let Err(e) = sizelint::log::init(Some(cli.log_level.as_str()), cli.verbose, cli.get_quiet())
-    {
+    if let Err(e) = sizelint::log::init(cli.debug, cli.get_quiet()) {
         eprintln!("Failed to initialize logging: {e}");
         return ExitCode::FAILURE;
     }
