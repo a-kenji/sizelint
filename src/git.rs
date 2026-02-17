@@ -1,4 +1,5 @@
 use miette::Diagnostic;
+use rayon::prelude::*;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -191,22 +192,11 @@ impl GitRepo {
         Ok(self.parse_paths(&output.stdout))
     }
 
-    /// Skips merges and submodule entries (mode 160000).
-    fn collect_history_entries(&self, range: &str) -> Result<Vec<BlobEntry>> {
-        let expanded = self.expand_git_range(range)?;
-        let command = format!(
-            "git log --raw --diff-filter=ACMRT --no-merges --format=format:COMMIT%t%h {expanded}"
-        );
-
+    fn rev_list_commits(&self, expanded_range: &str) -> Result<Vec<String>> {
+        let command = format!("git rev-list --no-merges {expanded_range}");
         let output = Command::new("git")
-            .args([
-                "log",
-                "--raw",
-                "--diff-filter=ACMRT",
-                "--no-merges",
-                "--format=format:COMMIT\t%h",
-            ])
-            .arg(&expanded)
+            .args(["rev-list", "--no-merges"])
+            .arg(expanded_range)
             .current_dir(&self.root)
             .output()
             .map_err(GitError::Exec)?;
@@ -215,12 +205,58 @@ impl GitRepo {
             return Err(self.command_failed(&command, &output));
         }
 
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| l.to_string())
+            .collect())
+    }
+
+    /// Spawn a single `git diff-tree -r --stdin` process fed with commit hashes,
+    /// parse the raw diff output into `BlobEntry` values.
+    /// Skips submodule entries (mode 160000).
+    fn diff_tree_entries(&self, commits: &[String]) -> Result<Vec<BlobEntry>> {
+        let mut child = Command::new("git")
+            .args([
+                "diff-tree",
+                "-r",
+                "--root",
+                "--stdin",
+                "--diff-filter=ACMRT",
+            ])
+            .current_dir(&self.root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(GitError::Exec)?;
+
+        let stdin = child.stdin.take().unwrap();
+        let commits_owned: Vec<String> = commits.to_vec();
+        let writer_thread = std::thread::spawn(move || -> std::io::Result<()> {
+            let mut writer = std::io::BufWriter::new(stdin);
+            for hash in &commits_owned {
+                writeln!(writer, "{hash}")?;
+            }
+            Ok(())
+        });
+
+        let output = child.wait_with_output().map_err(GitError::Exec)?;
+        writer_thread
+            .join()
+            .expect("stdin writer thread panicked")
+            .map_err(GitError::Exec)?;
+
+        if !output.status.success() {
+            return Err(self.command_failed("git diff-tree -r --root --stdin", &output));
+        }
+
         let mut entries = Vec::new();
         let mut current_commit = String::new();
 
         for line in String::from_utf8_lossy(&output.stdout).lines() {
-            if let Some(hash) = line.strip_prefix("COMMIT\t") {
-                current_commit = hash.to_string();
+            if line.len() == 40 && line.bytes().all(|b| b.is_ascii_hexdigit()) {
+                current_commit = line[..12].to_string();
                 continue;
             }
 
@@ -251,6 +287,30 @@ impl GitRepo {
         }
 
         Ok(entries)
+    }
+
+    /// Skips merges and submodule entries (mode 160000).
+    /// Parallelizes tree-diffing across available CPU cores.
+    fn collect_history_entries(&self, range: &str) -> Result<Vec<BlobEntry>> {
+        let expanded = self.expand_git_range(range)?;
+        let commits = self.rev_list_commits(&expanded)?;
+
+        if commits.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let num_cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
+        let chunk_size = commits.len().div_ceil(num_cpus).max(1);
+
+        let chunks: Vec<&[String]> = commits.chunks(chunk_size).collect();
+        let results: Result<Vec<Vec<BlobEntry>>> = chunks
+            .into_par_iter()
+            .map(|chunk| self.diff_tree_entries(chunk))
+            .collect();
+
+        Ok(results?.into_iter().flatten().collect())
     }
 
     /// Resolve blob sizes in batch via a single `git cat-file --batch-check`
@@ -319,8 +379,8 @@ impl GitRepo {
     }
 
     /// Walk every commit in the range and collect all added/modified blobs.
-    /// Uses a single `git log --raw` + single `git cat-file --batch-check`
-    /// (2 total spawns regardless of commit count).
+    /// Uses `git rev-list` + parallel `git diff-tree --stdin` workers +
+    /// single `git cat-file --batch-check`.
     pub fn walk_history_blobs(&self, range: &str) -> Result<Vec<HistoryBlob>> {
         let entries = self.collect_history_entries(range)?;
 
