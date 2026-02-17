@@ -161,8 +161,15 @@ impl App {
         }
         let violations: Vec<_> = best.into_values().collect();
         let suggestions = rule_engine.suggestions();
+        let descriptions = rule_engine.descriptions();
 
-        self.output_results(&violations, file_count, start.elapsed(), &suggestions)
+        self.output_results(
+            &violations,
+            file_count,
+            start.elapsed(),
+            &suggestions,
+            &descriptions,
+        )
     }
 
     /// Root directory for git operations.
@@ -262,11 +269,12 @@ impl App {
         file_count: usize,
         elapsed: std::time::Duration,
         suggestions: &std::collections::HashMap<&str, &str>,
+        descriptions: &std::collections::HashMap<&str, &str>,
     ) -> Result<ExitCode> {
         let cwd =
             std::env::current_dir().map_err(|e| SizelintError::CurrentDirectory { source: e })?;
         let formatter = OutputFormatter::new(self.cli.get_format(), self.cli.get_quiet(), cwd);
-        formatter.output_results(violations, file_count, elapsed, suggestions)?;
+        formatter.output_results(violations, file_count, elapsed, suggestions, descriptions)?;
 
         if !violations.is_empty() {
             let has_errors = violations

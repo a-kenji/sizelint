@@ -185,6 +185,14 @@ impl RuleEngine {
             .collect()
     }
 
+    pub fn descriptions(&self) -> std::collections::HashMap<&str, &str> {
+        self.rules
+            .iter()
+            .filter(|r| !r.definition.description.is_empty())
+            .map(|r| (r.name.as_str(), r.definition.description.as_str()))
+            .collect()
+    }
+
     pub fn get_rule_info(&self) -> Vec<RuleInfo> {
         self.rules.iter().map(|rule| rule.get_rule_info()).collect()
     }

@@ -60,11 +60,14 @@ impl OutputFormatter {
         files_checked: usize,
         elapsed: Duration,
         suggestions: &HashMap<&str, &str>,
+        descriptions: &HashMap<&str, &str>,
     ) -> Result<()> {
         let summary = self.create_summary(violations, files_checked, suggestions);
 
         match self.format {
-            OutputFormat::Human => self.output_human(violations, &summary, elapsed, suggestions),
+            OutputFormat::Human => {
+                self.output_human(violations, &summary, elapsed, suggestions, descriptions)
+            }
             OutputFormat::Json => self.output_json(&summary),
         }
     }
@@ -121,6 +124,7 @@ impl OutputFormatter {
         summary: &OutputSummary,
         elapsed: Duration,
         suggestions: &HashMap<&str, &str>,
+        descriptions: &HashMap<&str, &str>,
     ) -> Result<()> {
         let mut stdout = io::stdout();
         let gutter = "┃".dimmed();
@@ -131,7 +135,17 @@ impl OutputFormatter {
         }
 
         for (rule_name, rule_violations) in &by_rule {
-            writeln!(stdout, "{}", rule_name.bold())?;
+            if let Some(description) = descriptions.get(rule_name) {
+                writeln!(
+                    stdout,
+                    "{} {} {}",
+                    rule_name.bold(),
+                    "—".dimmed(),
+                    description.dimmed()
+                )?;
+            } else {
+                writeln!(stdout, "{}", rule_name.bold())?;
+            }
             writeln!(stdout, "{gutter}")?;
 
             let mut errors: Vec<&Violation> = Vec::new();
