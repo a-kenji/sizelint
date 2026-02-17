@@ -3,7 +3,7 @@ use crate::error::Result;
 use crate::rules::{Severity, Violation};
 use colored::*;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -26,6 +26,8 @@ pub struct ViolationOutput {
     pub severity: String,
     pub actual_value: Option<String>,
     pub expected_value: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggestion: Option<String>,
 }
 
 pub struct OutputFormatter {
@@ -55,16 +57,22 @@ impl OutputFormatter {
         violations: &[Violation],
         files_checked: usize,
         elapsed: Duration,
+        suggestions: &HashMap<&str, &str>,
     ) -> Result<()> {
-        let summary = self.create_summary(violations, files_checked);
+        let summary = self.create_summary(violations, files_checked, suggestions);
 
         match self.format {
-            OutputFormat::Human => self.output_human(violations, &summary, elapsed),
+            OutputFormat::Human => self.output_human(violations, &summary, elapsed, suggestions),
             OutputFormat::Json => self.output_json(&summary),
         }
     }
 
-    fn create_summary(&self, violations: &[Violation], files_checked: usize) -> OutputSummary {
+    fn create_summary(
+        &self,
+        violations: &[Violation],
+        files_checked: usize,
+        suggestions: &HashMap<&str, &str>,
+    ) -> OutputSummary {
         let mut rules_run = std::collections::HashSet::new();
         let mut error_count = 0;
         let mut warning_count = 0;
@@ -89,6 +97,7 @@ impl OutputFormatter {
                     },
                     actual_value: v.actual_value.clone(),
                     expected_value: v.expected_value.clone(),
+                    suggestion: suggestions.get(v.rule_name.as_str()).map(|s| s.to_string()),
                 }
             })
             .collect();
@@ -108,6 +117,7 @@ impl OutputFormatter {
         violations: &[Violation],
         summary: &OutputSummary,
         elapsed: Duration,
+        suggestions: &HashMap<&str, &str>,
     ) -> Result<()> {
         let mut stdout = io::stdout();
         let gutter = "┃".dimmed();
@@ -157,6 +167,12 @@ impl OutputFormatter {
                     }
                 }
             }
+
+            if let Some(suggestion) = suggestions.get(rule_name) {
+                writeln!(stdout, "{gutter}")?;
+                writeln!(stdout, "{} {}", "hint:".cyan().bold(), suggestion.dimmed())?;
+            }
+
             writeln!(stdout)?;
         }
 

@@ -84,6 +84,10 @@ pub struct RuleDefinition {
     pub warn_on_match: bool,
     #[serde(default)]
     pub error_on_match: bool,
+
+    // Actionable suggestion shown to users when this rule triggers
+    #[serde(default)]
+    pub suggestion: Option<String>,
 }
 
 impl Default for Config {
