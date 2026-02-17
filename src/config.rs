@@ -66,6 +66,7 @@ fn default_priority() -> i32 {
 pub struct RuleDefinition {
     #[serde(default = "default_true")]
     pub enabled: bool,
+    #[serde(default)]
     pub description: String,
     // Higher numbers = higher priority
     #[serde(default = "default_priority")]
