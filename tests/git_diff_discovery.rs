@@ -132,6 +132,50 @@ fn test_git_diff_config_excludes_filter_results() {
 }
 
 #[test]
+fn test_git_diff_config_excludes_with_relative_path() {
+    let repo = TestGitRepo::new();
+    let base = repo.default_branch();
+
+    TestGitRepo::git(&repo.root, &["checkout", "-b", "feature"]);
+    repo.write_file("pkgs/site/package-lock.json", "{}");
+    repo.write_file("pkgs/site/index.js", "code");
+    repo.write_file("src/main.rs", "fn main() {}");
+    TestGitRepo::git(&repo.root, &["add", "."]);
+    TestGitRepo::git(&repo.root, &["commit", "-m", "add files"]);
+
+    // Exclude using a relative path containing directory separators
+    let discovery =
+        FileDiscovery::new(&repo.root, &["pkgs/site/package-lock.json".to_string()]).unwrap();
+    let files = discovery.discover_git_diff_files(&base).unwrap();
+
+    let names = file_names(&files);
+    assert!(!names.contains(&"package-lock.json".to_string()));
+    assert!(names.contains(&"index.js".to_string()));
+    assert!(names.contains(&"main.rs".to_string()));
+}
+
+#[test]
+fn test_history_blob_config_excludes_with_relative_path() {
+    let repo = TestGitRepo::new();
+    let base = repo.default_branch();
+
+    TestGitRepo::git(&repo.root, &["checkout", "-b", "feature"]);
+    repo.write_file("vendor/lib/big.dat", &"x".repeat(512));
+    repo.write_file("src/code.rs", &"y".repeat(512));
+    TestGitRepo::git(&repo.root, &["add", "."]);
+    TestGitRepo::git(&repo.root, &["commit", "-m", "add files"]);
+
+    // Exclude using a relative path with directory prefix
+    let discovery = FileDiscovery::new(&repo.root, &["vendor/lib/big.dat".to_string()]).unwrap();
+    let blobs = discovery.discover_history_blobs(&base).unwrap();
+
+    let has_code = blobs.iter().any(|b| b.path.ends_with("src/code.rs"));
+    let has_dat = blobs.iter().any(|b| b.path.ends_with("vendor/lib/big.dat"));
+    assert!(has_code);
+    assert!(!has_dat);
+}
+
+#[test]
 fn test_git_diff_error_when_not_in_git_repo() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();

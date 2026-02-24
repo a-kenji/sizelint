@@ -59,6 +59,7 @@ impl FileDiscovery {
         walker.run(|| {
             let files = &files;
             let excludes = &self.excludes;
+            let root = &self.root;
 
             Box::new(move |entry| {
                 match entry {
@@ -72,7 +73,8 @@ impl FileDiscovery {
                             return ignore::WalkState::Continue;
                         }
 
-                        if !excludes.is_match(path) {
+                        let rel = path.strip_prefix(root).unwrap_or(path);
+                        if !excludes.is_match(rel) {
                             files.lock().unwrap().push(path.to_path_buf());
                         }
                     }
@@ -150,7 +152,8 @@ impl FileDiscovery {
                     .into_iter()
                     .filter(|blob| {
                         let path = Path::new(&blob.path);
-                        !self.excludes.is_match(path)
+                        let rel = path.strip_prefix(&self.root).unwrap_or(path);
+                        !self.excludes.is_match(rel)
                     })
                     .collect())
             }
@@ -166,7 +169,8 @@ impl FileDiscovery {
 
         for path in paths {
             if path.is_file() {
-                if !self.excludes.is_match(path) {
+                let rel = path.strip_prefix(&self.root).unwrap_or(path);
+                if !self.excludes.is_match(rel) {
                     files.push(path.clone());
                 }
             } else if path.is_dir() {
@@ -187,7 +191,10 @@ impl FileDiscovery {
     fn filter_files(&self, files: Vec<PathBuf>) -> Vec<PathBuf> {
         files
             .into_par_iter()
-            .filter(|path| path.exists() && !self.excludes.is_match(path))
+            .filter(|path| {
+                let rel = path.strip_prefix(&self.root).unwrap_or(path);
+                path.exists() && !self.excludes.is_match(rel)
+            })
             .collect()
     }
 
