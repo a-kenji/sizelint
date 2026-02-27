@@ -377,3 +377,49 @@ fn test_discovery_nested_directories() {
     assert!(!files_contain_name(&files, "output.txt")); // build/ ignored
     assert!(!files_contain_name(&files, "temp.tmp")); // *.tmp ignored
 }
+
+#[test]
+fn test_discovery_config_excludes_with_relative_paths() {
+    let tmpdir = utils::tmp_mkdir();
+    let tree_root = tmpdir.path();
+
+    utils::Git::new(tree_root.to_path_buf()).create();
+
+    // Create nested files where the exclude pattern uses a relative path
+    utils::mkdir(tree_root.join("pkgs/site"));
+    utils::mkdir(tree_root.join("src"));
+    utils::write_file(tree_root.join("pkgs/site/package-lock.json"), "{}");
+    utils::write_file(tree_root.join("pkgs/site/index.js"), "code");
+    utils::write_file(tree_root.join("src/main.rs"), "fn main() {}");
+
+    // Exclude using a relative path pattern containing a directory separator
+    let discovery =
+        FileDiscovery::new(tree_root, &["pkgs/site/package-lock.json".to_string()]).unwrap();
+    let files = discovery.discover_files(true).unwrap();
+
+    assert!(!files_contain_name(&files, "package-lock.json"));
+    assert!(files_contain_name(&files, "index.js"));
+    assert!(files_contain_name(&files, "main.rs"));
+}
+
+#[test]
+fn test_discovery_config_excludes_with_glob_subdirectory() {
+    let tmpdir = utils::tmp_mkdir();
+    let tree_root = tmpdir.path();
+
+    utils::Git::new(tree_root.to_path_buf()).create();
+
+    utils::mkdir(tree_root.join("vendor/lib"));
+    utils::write_file(tree_root.join("vendor/lib/big.dat"), "data");
+    utils::write_file(tree_root.join("vendor/lib/small.txt"), "text");
+    utils::mkdir(tree_root.join("src"));
+    utils::write_file(tree_root.join("src/main.rs"), "fn main() {}");
+
+    // Exclude using a glob with a directory prefix
+    let discovery = FileDiscovery::new(tree_root, &["vendor/**/*.dat".to_string()]).unwrap();
+    let files = discovery.discover_files(true).unwrap();
+
+    assert!(!files_contain_name(&files, "big.dat"));
+    assert!(files_contain_name(&files, "small.txt"));
+    assert!(files_contain_name(&files, "main.rs"));
+}
