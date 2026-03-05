@@ -344,19 +344,17 @@ impl App {
         print_progress(&format!("Opening {} in {}...", file_path.display(), editor));
 
         let status = Command::new(&editor).arg(file_path).status().map_err(|e| {
-            SizelintError::config_invalid(
-                "editor".to_string(),
-                editor.clone(),
-                format!("Failed to start editor: {e}"),
-            )
+            SizelintError::EditorExec {
+                editor: editor.clone(),
+                source: e,
+            }
         })?;
 
         if !status.success() {
-            return Err(SizelintError::config_invalid(
-                "editor".to_string(),
+            return Err(SizelintError::EditorFailed {
                 editor,
-                "Editor exited with error".to_string(),
-            ));
+                exit_code: status.code().unwrap_or(-1),
+            });
         }
 
         print_success("Configuration saved");
