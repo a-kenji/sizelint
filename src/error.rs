@@ -69,6 +69,21 @@ pub enum SizelintError {
         source: std::io::Error,
     },
 
+    #[error("Failed to start editor '{editor}'")]
+    #[diagnostic(
+        code(sizelint::editor::exec),
+        help("Check that the editor is installed and on your PATH, or set $VISUAL / $EDITOR")
+    )]
+    EditorExec {
+        editor: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("Editor '{editor}' exited with status {exit_code}")]
+    #[diagnostic(code(sizelint::editor::failed))]
+    EditorFailed { editor: String, exit_code: i32 },
+
     #[error("Invalid size format '{input}': {reason}")]
     #[diagnostic(
         code(sizelint::rule::invalid_size_format),
