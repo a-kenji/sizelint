@@ -28,6 +28,19 @@ The tool is compatible with treefmt and supports parallel processing for perform
 	*--working-tree*
 		Check only working tree files (equivalent to *git diff --name-only*).
 
+	*--git* _RANGE_
+		Check files changed in a git revision range. A bare ref such as *main*
+		is expanded to the merge-base with HEAD. Two-dot (*main..HEAD*) and
+		three-dot (*main...feature*) ranges are passed through as-is.
+		Both live files and historical blobs in the range are scanned.
+
+	*--no-history*
+		Skip git history scanning for deleted blobs (only check files at HEAD).
+		Requires *--git*.
+
+	*--fail-on-warn*
+		Treat warnings as errors (exit 1 on warnings).
+
 	*--quiet*, *-q*
 		Suppress informational output, show only violations.
 
@@ -39,6 +52,9 @@ The tool is compatible with treefmt and supports parallel processing for perform
 
 	*--stdout*
 		Print default configuration to stdout instead of writing to file.
+
+	*--edit*
+		Open configuration file in editor after creation (uses *$VISUAL*, *$EDITOR*, or *vi*).
 
 *rules* _ACTION_ (alias: *r*)
 	Rule management commands.
@@ -81,8 +97,14 @@ The tool is compatible with treefmt and supports parallel processing for perform
 *check_working_tree*
 	Check only working tree files by default (default: false).
 
+*git*
+	Default git revision range for file discovery. Same semantics as *--git*.
+
 *respect_gitignore*
 	Respect .gitignore patterns when discovering files (default: true).
+
+*fail_on_warn*
+	Treat warnings as errors (default: false).
 
 ## Rules Configuration
 
@@ -131,6 +153,15 @@ Check specific files:
 
 Check only staged files:
 	*sizelint check* *--staged*
+
+Check files changed since diverging from main:
+	*sizelint check* *--git* _main_
+
+Check a specific range without history scanning:
+	*sizelint check* *--git* _main..HEAD_ *--no-history*
+
+Scan the entire history of a branch for oversized blobs:
+	*sizelint check* *--git* _"$(git hash-object -t tree /dev/null)..master"_
 
 Initialize configuration:
 	*sizelint init*

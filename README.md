@@ -148,6 +148,16 @@ sizelint check
 sizelint check src/main.rs README.md
 ```
 
+### Git Integration
+
+```bash
+# Check files changed since diverging from main
+sizelint check --git main
+
+# Scan the entire history of a branch for oversized blobs
+sizelint check --git "$(git hash-object -t tree /dev/null)..master"
+```
+
 ## Configuration
 
 `sizelint` uses TOML configuration files.
