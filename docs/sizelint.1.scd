@@ -20,7 +20,7 @@ The tool is compatible with treefmt and supports parallel processing for perform
 	Check files for size violations. If no paths are specified, checks the current directory.
 
 	*--format* _FORMAT_, *-f* _FORMAT_
-		Set output format. Options: *human* (default), *json*, *summary*.
+		Set output format. Options: *human* (default), *json*.
 
 	*--staged*
 		Check only staged files (equivalent to *git diff --staged --name-only*).
@@ -108,13 +108,8 @@ The tool is compatible with treefmt and supports parallel processing for perform
 
 ## Rules Configuration
 
-Rules are defined in the *[rules]* section. Each rule has a unique name and configuration.
-
-*[rules.rule_name]*
-	Configuration for a specific rule.
-
-*type*
-	Rule type (e.g., "large_files").
+Rules are defined as *[rules.NAME]* tables. Each rule has a unique name and the
+following fields:
 
 *enabled*
 	Enable or disable the rule (default: true).
@@ -122,24 +117,31 @@ Rules are defined in the *[rules]* section. Each rule has a unique name and conf
 *description*
 	Human-readable description of the rule.
 
-*includes*
-	List of glob patterns to include for this rule.
-
-*excludes*
-	List of glob patterns to exclude for this rule.
+*priority*
+	Higher numbers are evaluated first. The first matching rule wins (default: 100).
 
 *max_size*
-	Maximum file size before error (for size-based rules).
+	Maximum file size before error. Examples: "10MB", "1GB".
 
 *warn_size*
-	File size warning threshold (for size-based rules).
+	File size warning threshold. Examples: "5MB", "500KB".
 
+*includes*
+	List of glob patterns — only matching files are checked by this rule.
 
-# RULES
+*excludes*
+	List of glob patterns — matching files are skipped by this rule.
 
-## large_files
+*warn_on_match*
+	Emit a warning for any file matching the include patterns (default: false).
 
-Checks files against configured size limits. Supports both error and warning thresholds with configurable exclude patterns.
+*error_on_match*
+	Emit an error for any file matching the include patterns (default: false).
+
+*suggestion*
+	Actionable hint shown to users when this rule triggers.
+
+## Size Units
 
 Size units use binary multipliers: B, KB (1024), MB (1024²), GB (1024³), TB (1024⁴).
 
@@ -170,7 +172,7 @@ List available rules:
 	*sizelint rules list*
 
 Show rule details:
-	*sizelint rules describe* _large_files_
+	*sizelint rules describe* _default_
 
 Generate bash completions:
 	*sizelint completions* _bash_
@@ -179,36 +181,39 @@ Generate bash completions:
 
 Basic configuration:
 ```
-[sizelint]
 max_file_size = "10MB"
 warn_file_size = "5MB"
 excludes = ["*.zip", "docs/assets/*"]
-
-[rules.large_files]
-type = "large_files"
-enabled = true
-description = "Checks for files that exceed configured size limits"
-max_size = "10MB"
-warn_size = "5MB"
 ```
 
-Advanced rule configuration:
+Per-rule overrides:
 ```
 [rules.image_files]
-type = "large_files"
 enabled = true
 description = "Size limits for image files"
+priority = 80
 includes = ["*.jpg", "*.png", "*.gif"]
 max_size = "2MB"
 warn_size = "1MB"
 
 [rules.video_files]
-type = "large_files"
 enabled = true
 description = "Size limits for video files"
+priority = 80
 includes = ["*.mp4", "*.avi", "*.mov"]
 excludes = ["docs/demos/*"]
 max_size = "50MB"
+```
+
+Pattern-based rule:
+```
+[rules.no_images]
+enabled = true
+description = "Warn about image files that might be better handled with LFS"
+priority = 80
+includes = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp"]
+warn_on_match = true
+suggestion = "Consider using Git LFS: git lfs track '*.png'"
 ```
 
 # EXIT STATUS
