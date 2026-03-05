@@ -87,11 +87,18 @@ impl App {
 
     fn run_check(&self, paths: Vec<PathBuf>) -> Result<ExitCode> {
         let start = std::time::Instant::now();
-        let git_range = self.active_git_range();
         let check_root = self.check_root(&paths)?;
 
+        let git_range = match self.active_git_range() {
+            Some(raw) => match GitRepo::discover(&check_root) {
+                Ok(repo) => Some(repo.expand_git_range(&raw)?),
+                Err(_) => Some(raw),
+            },
+            None => None,
+        };
+
         let files = if paths.is_empty() {
-            self.discover_files_at(&check_root)?
+            self.discover_files_at(&check_root, git_range.as_deref())?
         } else {
             // Explicit files pass through; directories use the same
             // git-aware discovery as the no-paths case.
@@ -105,7 +112,7 @@ impl App {
                 }
             }
             for dir in &dirs {
-                files.extend(self.discover_files_at(dir)?);
+                files.extend(self.discover_files_at(dir, git_range.as_deref())?);
             }
             files
         };
@@ -232,7 +239,11 @@ impl App {
         self.cli.get_git().or(self.config.sizelint.git.clone())
     }
 
-    fn discover_files_at(&self, root: &std::path::Path) -> Result<Vec<PathBuf>> {
+    fn discover_files_at(
+        &self,
+        root: &std::path::Path,
+        git_range: Option<&str>,
+    ) -> Result<Vec<PathBuf>> {
         let discovery = FileDiscovery::new(root, &self.config.sizelint.excludes)?;
 
         debug!("Discovering files...");
@@ -247,16 +258,16 @@ impl App {
         {
             print_progress("Checking working tree files (git diff)");
             discovery.discover_working_tree_files()
-        } else if let Some(range) = self.cli.get_git().or(self.config.sizelint.git.clone()) {
+        } else if let Some(range) = git_range {
             let commit_count = discovery
                 .git_repo()
-                .map(|r| r.count_commits_in_range(&range).unwrap_or(0))
+                .map(|r| r.count_commits_in_range(range).unwrap_or(0))
                 .unwrap_or(0);
             print_progress(&format!(
                 "Checking git range: {range} ({commit_count} commit{})",
                 if commit_count == 1 { "" } else { "s" }
             ));
-            discovery.discover_git_diff_files(&range)
+            discovery.discover_git_diff_files(range)
         } else {
             print_progress("Checking all files (directory walk)");
             discovery.discover_files(self.config.sizelint.respect_gitignore)
