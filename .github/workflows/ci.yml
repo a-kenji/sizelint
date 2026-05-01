@@ -15,15 +15,15 @@ jobs:
     runs-on: ubuntu-latest
     environment: cachix
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-      - uses: nixos/nix-installer-action@06919331f77d29cd5254bbc9df033ea07232d89a
-      - uses: cachix/cachix-action@v17
+      - uses: nixos/nix-installer-action@6b8548fe06acfb0155a50ab5d561accb215764cc # main
+      - uses: cachix/cachix-action@1eb2ef646ac0255473d23a5907ad7b04ce94065c # v17
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
+      - uses: DeterminateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
         with:
           diagnostic-endpoint: ""
       - name: "build dependencies"
@@ -32,15 +32,15 @@ jobs:
     runs-on: ubuntu-latest
     environment: cachix
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-      - uses: nixos/nix-installer-action@06919331f77d29cd5254bbc9df033ea07232d89a
-      - uses: cachix/cachix-action@v17
+      - uses: nixos/nix-installer-action@6b8548fe06acfb0155a50ab5d561accb215764cc # main
+      - uses: cachix/cachix-action@1eb2ef646ac0255473d23a5907ad7b04ce94065c # v17
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
+      - uses: DeterminateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
         with:
           diagnostic-endpoint: ""
       - name: "check formatting"
@@ -50,15 +50,15 @@ jobs:
     environment: cachix
     needs: ['formatting', 'dependencies']
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-      - uses: nixos/nix-installer-action@06919331f77d29cd5254bbc9df033ea07232d89a
-      - uses: cachix/cachix-action@v17
+      - uses: nixos/nix-installer-action@6b8548fe06acfb0155a50ab5d561accb215764cc # main
+      - uses: cachix/cachix-action@1eb2ef646ac0255473d23a5907ad7b04ce94065c # v17
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
+      - uses: DeterminateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
         with:
           diagnostic-endpoint: ""
       - name: "run tests"
@@ -68,15 +68,15 @@ jobs:
     environment: cachix
     needs: ['formatting', 'dependencies']
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-      - uses: nixos/nix-installer-action@06919331f77d29cd5254bbc9df033ea07232d89a
-      - uses: cachix/cachix-action@v17
+      - uses: nixos/nix-installer-action@6b8548fe06acfb0155a50ab5d561accb215764cc # main
+      - uses: cachix/cachix-action@1eb2ef646ac0255473d23a5907ad7b04ce94065c # v17
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
+      - uses: DeterminateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
         with:
           diagnostic-endpoint: ""
       - name: "build cargo documentation"
@@ -86,15 +86,15 @@ jobs:
     environment: cachix
     needs: ['formatting', 'dependencies']
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-      - uses: nixos/nix-installer-action@06919331f77d29cd5254bbc9df033ea07232d89a
-      - uses: cachix/cachix-action@v17
+      - uses: nixos/nix-installer-action@6b8548fe06acfb0155a50ab5d561accb215764cc # main
+      - uses: cachix/cachix-action@1eb2ef646ac0255473d23a5907ad7b04ce94065c # v17
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
+      - uses: DeterminateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
         with:
           diagnostic-endpoint: ""
       - name: "run cargo clippy"
@@ -104,15 +104,15 @@ jobs:
     environment: cachix
     needs: ['formatting', 'dependencies' ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-      - uses: nixos/nix-installer-action@06919331f77d29cd5254bbc9df033ea07232d89a
-      - uses: cachix/cachix-action@v17
+      - uses: nixos/nix-installer-action@6b8548fe06acfb0155a50ab5d561accb215764cc # main
+      - uses: cachix/cachix-action@1eb2ef646ac0255473d23a5907ad7b04ce94065c # v17
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
+      - uses: DeterminateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
         with:
           diagnostic-endpoint: ""
       - name: "build sizelint"
@@ -122,15 +122,15 @@ jobs:
     environment: cachix
     needs: ['formatting']
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-      - uses: nixos/nix-installer-action@06919331f77d29cd5254bbc9df033ea07232d89a
-      - uses: cachix/cachix-action@v17
+      - uses: nixos/nix-installer-action@6b8548fe06acfb0155a50ab5d561accb215764cc # main
+      - uses: cachix/cachix-action@1eb2ef646ac0255473d23a5907ad7b04ce94065c # v17
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
+      - uses: DeterminateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
         with:
           diagnostic-endpoint: ""
       - name: "build devshells"
