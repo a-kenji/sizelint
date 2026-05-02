@@ -6,7 +6,7 @@ _: {
     in
     {
       devShells = {
-        default = pkgs.mkShellNoCC {
+        default = pkgs.mkShell {
           name = "sizelint";
           inputsFrom = [ self'.packages.default ];
           packages = [
@@ -19,7 +19,7 @@ _: {
           ];
           inherit env;
         };
-        full = pkgs.mkShellNoCC {
+        full = pkgs.mkShell {
           inputsFrom = [ self'.devShells.default ];
           packages = [
             pkgs.cargo-deny
