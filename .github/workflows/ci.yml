@@ -19,7 +19,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: nixos/nix-installer-action@6b8548fe06acfb0155a50ab5d561accb215764cc # main
-      - uses: cachix/cachix-action@1eb2ef646ac0255473d23a5907ad7b04ce94065c # v17
+      - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
@@ -36,7 +36,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: nixos/nix-installer-action@6b8548fe06acfb0155a50ab5d561accb215764cc # main
-      - uses: cachix/cachix-action@1eb2ef646ac0255473d23a5907ad7b04ce94065c # v17
+      - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
@@ -54,7 +54,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: nixos/nix-installer-action@6b8548fe06acfb0155a50ab5d561accb215764cc # main
-      - uses: cachix/cachix-action@1eb2ef646ac0255473d23a5907ad7b04ce94065c # v17
+      - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
@@ -72,7 +72,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: nixos/nix-installer-action@6b8548fe06acfb0155a50ab5d561accb215764cc # main
-      - uses: cachix/cachix-action@1eb2ef646ac0255473d23a5907ad7b04ce94065c # v17
+      - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
@@ -90,7 +90,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: nixos/nix-installer-action@6b8548fe06acfb0155a50ab5d561accb215764cc # main
-      - uses: cachix/cachix-action@1eb2ef646ac0255473d23a5907ad7b04ce94065c # v17
+      - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
@@ -108,7 +108,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: nixos/nix-installer-action@6b8548fe06acfb0155a50ab5d561accb215764cc # main
-      - uses: cachix/cachix-action@1eb2ef646ac0255473d23a5907ad7b04ce94065c # v17
+      - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
@@ -126,7 +126,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: nixos/nix-installer-action@6b8548fe06acfb0155a50ab5d561accb215764cc # main
-      - uses: cachix/cachix-action@1eb2ef646ac0255473d23a5907ad7b04ce94065c # v17
+      - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
