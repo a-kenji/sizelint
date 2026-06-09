@@ -35,7 +35,13 @@ let
   cargoArtifacts = craneLib.buildDepsOnly commonArgs;
   cargoClippy = craneLib.cargoClippy (commonArgs // { inherit cargoArtifacts; });
   cargoDeny = craneLib.cargoDeny (commonArgs // { inherit cargoArtifacts; });
-  cargoTarpaulin = craneLib.cargoTarpaulin (commonArgs // { inherit cargoArtifacts; });
+  cargoTarpaulin = craneLib.cargoTarpaulin (
+    commonArgs
+    // {
+      inherit cargoArtifacts;
+      nativeBuildInputs = commonArgs.nativeBuildInputs ++ [ pkgs.git ];
+    }
+  );
   cargoDoc = craneLib.cargoDoc (commonArgs // { inherit cargoArtifacts; });
   cargoTest = craneLib.cargoNextest (commonArgs // { inherit cargoArtifacts; });
 in
