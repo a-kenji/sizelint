@@ -16,7 +16,7 @@ jobs:
   actionlint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - uses: nixos/nix-installer-action@6b8548fe06acfb0155a50ab5d561accb215764cc # main
     - name: "actionlint"
       run: nix run -Lv --refresh --inputs-from .# nixpkgs#actionlint -- --ignore SC2002
