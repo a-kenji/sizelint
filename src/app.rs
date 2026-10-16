@@ -2,7 +2,7 @@ use crate::cli::{Cli, Commands, RuleAction};
 use crate::config::Config;
 use crate::discovery::FileDiscovery;
 use crate::error::{Result, SizelintError};
-use crate::git::{GitError, GitRepo};
+use crate::git::{GitError, GitRange, GitRepo};
 use crate::output::{OutputFormatter, print_error, print_progress, print_success};
 use crate::rules::{ConfigurableRule, RuleEngine};
 use colored::*;
@@ -88,15 +88,12 @@ impl App {
         let check_root = self.check_root(&paths)?;
 
         let git_range = match self.active_git_range() {
-            Some(raw) => match GitRepo::discover(&check_root) {
-                Ok(repo) => Some(repo.expand_git_range(&raw)?),
-                Err(_) => Some(raw),
-            },
+            Some(raw) => Some(GitRange::resolve(&check_root, &raw)?),
             None => None,
         };
 
         let files = if paths.is_empty() {
-            self.discover_files_at(&check_root, git_range.as_deref())?
+            self.discover_files_at(&check_root, git_range.as_ref())?
         } else {
             // Explicit files pass through; directories use the same
             // git-aware discovery as the no-paths case.
@@ -110,7 +107,7 @@ impl App {
                 }
             }
             for dir in &dirs {
-                files.extend(self.discover_files_at(dir, git_range.as_deref())?);
+                files.extend(self.discover_files_at(dir, git_range.as_ref())?);
             }
             files
         };
@@ -246,7 +243,7 @@ impl App {
     fn discover_files_at(
         &self,
         root: &std::path::Path,
-        git_range: Option<&str>,
+        git_range: Option<&GitRange>,
     ) -> Result<Vec<PathBuf>> {
         let discovery = FileDiscovery::new(root, &self.config.sizelint.excludes)?;
 
@@ -263,14 +260,13 @@ impl App {
             print_progress("Checking working tree files (git diff)");
             discovery.discover_working_tree_files()
         } else if let Some(range) = git_range {
-            let commit_count = discovery
-                .git_repo()
-                .map(|r| r.count_commits_in_range(range).unwrap_or(0))
-                .unwrap_or(0);
-            print_progress(&format!(
-                "Checking git range: {range} ({commit_count} commit{})",
-                if commit_count == 1 { "" } else { "s" }
-            ));
+            if let Some(repo) = discovery.git_repo() {
+                let commit_count = repo.count_commits(range)?;
+                print_progress(&format!(
+                    "Checking git range: {range} ({commit_count} commit{})",
+                    if commit_count == 1 { "" } else { "s" }
+                ));
+            }
             discovery.discover_git_diff_files(range)
         } else {
             print_progress("Checking all files (directory walk)");

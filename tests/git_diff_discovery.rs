@@ -1,3 +1,4 @@
+use sizelint::GitRange;
 use sizelint::discovery::FileDiscovery;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -50,6 +51,10 @@ impl TestGitRepo {
         Self::git(&self.root, &["branch", "--show-current"])
     }
 
+    fn range(&self, raw: &str) -> GitRange {
+        GitRange::resolve(&self.root, raw).unwrap()
+    }
+
     fn write_file(&self, name: &str, content: &str) {
         let path = self.root.join(name);
         if let Some(parent) = path.parent() {
@@ -81,7 +86,9 @@ fn test_git_diff_discovers_changed_files_via_merge_base() {
     TestGitRepo::git(&repo.root, &["commit", "-m", "add feature files"]);
 
     let discovery = FileDiscovery::new(&repo.root, &[]).unwrap();
-    let files = discovery.discover_git_diff_files(&base).unwrap();
+    let files = discovery
+        .discover_git_diff_files(&repo.range(&base))
+        .unwrap();
 
     let names = file_names(&files);
     assert!(names.contains(&"feature.rs".to_string()));
@@ -101,7 +108,9 @@ fn test_git_diff_two_dot_range() {
 
     let range = format!("{base}..feature");
     let discovery = FileDiscovery::new(&repo.root, &[]).unwrap();
-    let files = discovery.discover_git_diff_files(&range).unwrap();
+    let files = discovery
+        .discover_git_diff_files(&repo.range(&range))
+        .unwrap();
 
     let names = file_names(&files);
     assert_eq!(names, vec!["new.rs"]);
@@ -113,7 +122,9 @@ fn test_git_diff_empty_range_returns_zero_files() {
 
     // Diff HEAD against itself: no changes
     let discovery = FileDiscovery::new(&repo.root, &[]).unwrap();
-    let files = discovery.discover_git_diff_files("HEAD..HEAD").unwrap();
+    let files = discovery
+        .discover_git_diff_files(&repo.range("HEAD..HEAD"))
+        .unwrap();
 
     assert!(files.is_empty());
 }
@@ -130,7 +141,9 @@ fn test_git_diff_config_excludes_filter_results() {
     TestGitRepo::git(&repo.root, &["commit", "-m", "mixed files"]);
 
     let discovery = FileDiscovery::new(&repo.root, &["*.bin".to_string()]).unwrap();
-    let files = discovery.discover_git_diff_files(&base).unwrap();
+    let files = discovery
+        .discover_git_diff_files(&repo.range(&base))
+        .unwrap();
 
     let names = file_names(&files);
     assert!(names.contains(&"main.rs".to_string()));
@@ -152,7 +165,9 @@ fn test_git_diff_config_excludes_with_relative_path() {
     // Exclude using a relative path containing directory separators
     let discovery =
         FileDiscovery::new(&repo.root, &["pkgs/site/package-lock.json".to_string()]).unwrap();
-    let files = discovery.discover_git_diff_files(&base).unwrap();
+    let files = discovery
+        .discover_git_diff_files(&repo.range(&base))
+        .unwrap();
 
     let names = file_names(&files);
     assert!(!names.contains(&"package-lock.json".to_string()));
@@ -173,7 +188,9 @@ fn test_history_blob_config_excludes_with_relative_path() {
 
     // Exclude using a relative path with directory prefix
     let discovery = FileDiscovery::new(&repo.root, &["vendor/lib/big.dat".to_string()]).unwrap();
-    let blobs = discovery.discover_history_blobs(&base).unwrap();
+    let blobs = discovery
+        .discover_history_blobs(&repo.range(&base))
+        .unwrap();
 
     let has_code = blobs.iter().any(|b| b.path.ends_with("src/code.rs"));
     let has_dat = blobs.iter().any(|b| b.path.ends_with("vendor/lib/big.dat"));
@@ -186,9 +203,12 @@ fn test_git_diff_error_when_not_in_git_repo() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
 
+    let repo = TestGitRepo::new();
+    let range = repo.range(&repo.default_branch());
+
     // No git init — not a repo
     let discovery = FileDiscovery::new(root, &[]).unwrap();
-    let result = discovery.discover_git_diff_files("main");
+    let result = discovery.discover_git_diff_files(&range);
 
     assert!(result.is_err());
 }
@@ -221,7 +241,9 @@ fn test_history_blob_small_file_no_violation() {
     TestGitRepo::git(&repo.root, &["commit", "-m", "remove notes"]);
 
     let discovery = FileDiscovery::new(&repo.root, &[]).unwrap();
-    let blobs = discovery.discover_history_blobs(&base).unwrap();
+    let blobs = discovery
+        .discover_history_blobs(&repo.range(&base))
+        .unwrap();
 
     let notes_blobs: Vec<_> = blobs
         .iter()
@@ -267,7 +289,9 @@ fn test_history_blob_config_excludes_filter() {
     TestGitRepo::git(&repo.root, &["commit", "-m", "remove files"]);
 
     let discovery = FileDiscovery::new(&repo.root, &["*.dat".to_string()]).unwrap();
-    let blobs = discovery.discover_history_blobs(&base).unwrap();
+    let blobs = discovery
+        .discover_history_blobs(&repo.range(&base))
+        .unwrap();
 
     // Only code.rs should appear, not big.dat (excluded)
     let has_code = blobs.iter().any(|b| b.path.ends_with("src/code.rs"));
@@ -304,7 +328,9 @@ fn test_history_blob_add_delete_readd_delete() {
     TestGitRepo::git(&repo.root, &["commit", "-m", "delete v2"]);
 
     let discovery = FileDiscovery::new(&repo.root, &[]).unwrap();
-    let blobs = discovery.discover_history_blobs(&base).unwrap();
+    let blobs = discovery
+        .discover_history_blobs(&repo.range(&base))
+        .unwrap();
 
     // Per-commit walk finds both add commits
     let csv_blobs: Vec<_> = blobs
@@ -336,7 +362,9 @@ fn test_history_blob_temporarily_too_large_then_shrunk() {
     TestGitRepo::git(&repo.root, &["commit", "-m", "shrink"]);
 
     let discovery = FileDiscovery::new(&repo.root, &[]).unwrap();
-    let blobs = discovery.discover_history_blobs(&base).unwrap();
+    let blobs = discovery
+        .discover_history_blobs(&repo.range(&base))
+        .unwrap();
 
     // Both the large and small versions appear
     let data_blobs: Vec<_> = blobs
@@ -387,7 +415,9 @@ fn test_history_blob_grew_then_deleted() {
     TestGitRepo::git(&repo.root, &["commit", "-m", "remove big log"]);
 
     let discovery = FileDiscovery::new(&repo.root, &[]).unwrap();
-    let blobs = discovery.discover_history_blobs(&base).unwrap();
+    let blobs = discovery
+        .discover_history_blobs(&repo.range(&base))
+        .unwrap();
 
     let mut engine = RuleEngine::new();
     let rule = ConfigurableRule::new(
@@ -422,7 +452,9 @@ fn test_history_blob_records_commit_in_sha256_repo() {
     assert_eq!(head.len(), 64, "fixture is not a SHA-256 repository");
 
     let discovery = FileDiscovery::new(&repo.root, &[]).unwrap();
-    let blobs = discovery.discover_history_blobs(&base).unwrap();
+    let blobs = discovery
+        .discover_history_blobs(&repo.range(&base))
+        .unwrap();
 
     let big: Vec<_> = blobs
         .iter()
@@ -459,7 +491,9 @@ fn test_history_blob_dedup_keeps_largest() {
     TestGitRepo::git(&repo.root, &["commit", "-m", "grow to 1200"]);
 
     let discovery = FileDiscovery::new(&repo.root, &[]).unwrap();
-    let blobs = discovery.discover_history_blobs(&base).unwrap();
+    let blobs = discovery
+        .discover_history_blobs(&repo.range(&base))
+        .unwrap();
 
     let grow_blobs: Vec<_> = blobs
         .iter()
@@ -510,7 +544,9 @@ fn test_cross_phase_dedup_keeps_larger_history_blob() {
     TestGitRepo::git(&repo.root, &["commit", "-m", "shrink"]);
 
     let discovery = FileDiscovery::new(&repo.root, &[]).unwrap();
-    let live_files = discovery.discover_git_diff_files(&base).unwrap();
+    let live_files = discovery
+        .discover_git_diff_files(&repo.range(&base))
+        .unwrap();
 
     let mut engine = RuleEngine::new();
     let rule = ConfigurableRule::new(
@@ -532,7 +568,9 @@ fn test_cross_phase_dedup_keeps_larger_history_blob() {
     assert_eq!(phase1_count, 1);
 
     // Phase 2: history walk finds the 2000B intermediate blob
-    let blobs = discovery.discover_history_blobs(&base).unwrap();
+    let blobs = discovery
+        .discover_history_blobs(&repo.range(&base))
+        .unwrap();
     let blob_violations = engine.check_history_blobs(&blobs).unwrap();
     violations.extend(blob_violations);
 
@@ -575,7 +613,9 @@ fn test_cross_phase_dedup_no_duplicate_when_unchanged() {
     TestGitRepo::git(&repo.root, &["commit", "-m", "add big"]);
 
     let discovery = FileDiscovery::new(&repo.root, &[]).unwrap();
-    let live_files = discovery.discover_git_diff_files(&base).unwrap();
+    let live_files = discovery
+        .discover_git_diff_files(&repo.range(&base))
+        .unwrap();
 
     let mut engine = RuleEngine::new();
     let rule = ConfigurableRule::new(
@@ -596,7 +636,9 @@ fn test_cross_phase_dedup_no_duplicate_when_unchanged() {
     assert_eq!(violations.len(), 1);
 
     // Phase 2
-    let blobs = discovery.discover_history_blobs(&base).unwrap();
+    let blobs = discovery
+        .discover_history_blobs(&repo.range(&base))
+        .unwrap();
     let blob_violations = engine.check_history_blobs(&blobs).unwrap();
     violations.extend(blob_violations);
 
@@ -619,4 +661,62 @@ fn test_cross_phase_dedup_no_duplicate_when_unchanged() {
 
     assert_eq!(violations.len(), 1);
     assert_eq!(violations[0].sort_key, 800);
+}
+
+#[test]
+fn test_history_scan_errors_on_unknown_range_endpoint() {
+    let repo = TestGitRepo::new();
+    let range = repo.range("does-not-exist..HEAD");
+
+    let discovery = FileDiscovery::new(&repo.root, &[]).unwrap();
+    let result = discovery.discover_history_blobs(&range);
+
+    assert!(result.is_err(), "expected error, got {result:?}");
+}
+
+#[test]
+fn test_history_blob_shared_across_rename_and_readd() {
+    let repo = TestGitRepo::new();
+    let base = repo.default_branch();
+
+    TestGitRepo::git(&repo.root, &["checkout", "-b", "feature"]);
+
+    write_large_file(&repo, "asset.bin", 700);
+    TestGitRepo::git(&repo.root, &["add", "."]);
+    TestGitRepo::git(&repo.root, &["commit", "-m", "add asset"]);
+
+    TestGitRepo::git(&repo.root, &["mv", "asset.bin", "moved.bin"]);
+    TestGitRepo::git(&repo.root, &["commit", "-m", "rename asset"]);
+
+    write_large_file(&repo, "asset.bin", 700);
+    TestGitRepo::git(&repo.root, &["add", "."]);
+    TestGitRepo::git(&repo.root, &["commit", "-m", "re-add asset"]);
+
+    // A distinct blob in between must not shift the mapping.
+    write_large_file(&repo, "other.bin", 300);
+    TestGitRepo::git(&repo.root, &["add", "."]);
+    TestGitRepo::git(&repo.root, &["commit", "-m", "add other"]);
+
+    let discovery = FileDiscovery::new(&repo.root, &[]).unwrap();
+    let blobs = discovery
+        .discover_history_blobs(&repo.range(&base))
+        .unwrap();
+
+    let mut seen: Vec<(String, u64)> = blobs
+        .iter()
+        .map(|b| {
+            let name = Path::new(&b.path).file_name().unwrap();
+            (name.to_string_lossy().to_string(), b.size)
+        })
+        .collect();
+    seen.sort();
+    assert_eq!(
+        seen,
+        vec![
+            ("asset.bin".to_string(), 700),
+            ("asset.bin".to_string(), 700),
+            ("moved.bin".to_string(), 700),
+            ("other.bin".to_string(), 300),
+        ]
+    );
 }

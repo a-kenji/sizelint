@@ -1,5 +1,6 @@
 use miette::Diagnostic;
 use rayon::prelude::*;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -54,6 +55,26 @@ pub struct HistoryBlob {
     pub commit: String,
 }
 
+/// A revision range produced by [`GitRange::resolve`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitRange(String);
+
+impl GitRange {
+    pub fn resolve(path: &Path, raw: &str) -> Result<Self> {
+        GitRepo::discover(path)?.expand_git_range(raw)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for GitRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 struct BlobEntry {
     blob_hash: String,
     path: String,
@@ -62,6 +83,15 @@ struct BlobEntry {
 
 pub struct GitRepo {
     root: PathBuf,
+}
+
+fn distinct_blob_hashes(entries: &[BlobEntry]) -> Vec<&str> {
+    let mut seen = HashSet::new();
+    entries
+        .iter()
+        .map(|e| e.blob_hash.as_str())
+        .filter(|hash| seen.insert(*hash))
+        .collect()
 }
 
 impl GitRepo {
@@ -114,24 +144,23 @@ impl GitRepo {
         Ok(self.parse_paths(&output.stdout))
     }
 
-    /// Count the number of commits in a range.
-    pub fn count_commits_in_range(&self, range: &str) -> Result<usize> {
-        let expanded = self.expand_git_range(range)?;
-        let output = Command::new("git")
-            .args(["rev-list", "--count"])
-            .arg(&expanded)
-            .current_dir(&self.root)
-            .output()
-            .map_err(GitError::Exec)?;
+    pub fn count_commits(&self, range: &GitRange) -> Result<usize> {
+        let command = format!("git rev-list --count {range}");
+        let output = self.exec(&["rev-list", "--count", range.as_str()])?;
 
         if !output.status.success() {
-            return Ok(0);
+            return Err(self.command_failed(&command, &output));
         }
 
-        Ok(String::from_utf8_lossy(&output.stdout)
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        stdout
             .trim()
             .parse::<usize>()
-            .unwrap_or(0))
+            .map_err(|_| GitError::CommandFailed {
+                command,
+                exit_code: -1,
+                stderr: format!("Could not parse commit count from: {stdout}"),
+            })
     }
 
     /// Expand a git range string for use with `git diff`.
@@ -139,9 +168,9 @@ impl GitRepo {
     /// Bare refs (no `..` or `...`) are expanded to `<merge-base>..HEAD`
     /// so that `--git main` means "files changed since diverging from main".
     /// Two-dot and three-dot ranges are passed through unchanged.
-    pub fn expand_git_range(&self, range: &str) -> Result<String> {
-        if range.contains("...") || range.contains("..") {
-            return Ok(range.to_string());
+    pub fn expand_git_range(&self, range: &str) -> Result<GitRange> {
+        if range.contains("..") {
+            return Ok(GitRange(range.to_string()));
         }
 
         // Verify the ref exists before trying merge-base
@@ -170,21 +199,12 @@ impl GitRepo {
         }
 
         let merge_base = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        Ok(format!("{merge_base}..HEAD"))
+        Ok(GitRange(format!("{merge_base}..HEAD")))
     }
 
-    pub fn get_diff_files(&self, range: &str) -> Result<Vec<PathBuf>> {
-        let expanded = self.expand_git_range(range)?;
-        let command = format!("git diff --name-only --diff-filter=ACMRT {expanded}");
-
-        let output = Command::new("git")
-            .arg("diff")
-            .arg("--name-only")
-            .arg("--diff-filter=ACMRT")
-            .arg(&expanded)
-            .current_dir(&self.root)
-            .output()
-            .map_err(GitError::Exec)?;
+    pub fn get_diff_files(&self, range: &GitRange) -> Result<Vec<PathBuf>> {
+        let command = format!("git diff --name-only --diff-filter=ACMRT {range}");
+        let output = self.exec(&["diff", "--name-only", "--diff-filter=ACMRT", range.as_str()])?;
 
         if !output.status.success() {
             return Err(self.command_failed(&command, &output));
@@ -193,14 +213,9 @@ impl GitRepo {
         Ok(self.parse_paths(&output.stdout))
     }
 
-    fn rev_list_commits(&self, expanded_range: &str) -> Result<Vec<String>> {
-        let command = format!("git rev-list --no-merges {expanded_range}");
-        let output = Command::new("git")
-            .args(["rev-list", "--no-merges"])
-            .arg(expanded_range)
-            .current_dir(&self.root)
-            .output()
-            .map_err(GitError::Exec)?;
+    fn rev_list_commits(&self, range: &GitRange) -> Result<Vec<String>> {
+        let command = format!("git rev-list --no-merges {range}");
+        let output = self.exec(&["rev-list", "--no-merges", range.as_str()])?;
 
         if !output.status.success() {
             return Err(self.command_failed(&command, &output));
@@ -292,9 +307,8 @@ impl GitRepo {
 
     /// Skips merges and submodule entries (mode 160000).
     /// Parallelizes tree-diffing across available CPU cores.
-    fn collect_history_entries(&self, range: &str) -> Result<Vec<BlobEntry>> {
-        let expanded = self.expand_git_range(range)?;
-        let commits = self.rev_list_commits(&expanded)?;
+    fn collect_history_entries(&self, range: &GitRange) -> Result<Vec<BlobEntry>> {
+        let commits = self.rev_list_commits(range)?;
 
         if commits.is_empty() {
             return Ok(Vec::new());
@@ -317,6 +331,22 @@ impl GitRepo {
     /// Resolve blob sizes in batch via a single `git cat-file --batch-check`
     /// process instead of spawning one process per blob.
     fn batch_blob_sizes(&self, entries: &[BlobEntry]) -> Result<Vec<u64>> {
+        let hashes = distinct_blob_hashes(entries);
+        let sizes: HashMap<&str, u64> = hashes
+            .iter()
+            .copied()
+            .zip(self.cat_file_sizes(&hashes)?)
+            .collect();
+        Ok(entries
+            .iter()
+            .map(|e| sizes[e.blob_hash.as_str()])
+            .collect())
+    }
+
+    /// Look up blob sizes via a single `git cat-file --batch-check` process.
+    /// Returns one size per hash, in input order.
+    fn cat_file_sizes(&self, hashes: &[&str]) -> Result<Vec<u64>> {
+        const COMMAND: &str = "git cat-file --batch-check";
         let mut child = Command::new("git")
             .args(["cat-file", "--batch-check"])
             .current_dir(&self.root)
@@ -330,10 +360,10 @@ impl GitRepo {
         // blobs the stdout pipe buffer fills while we're still writing to
         // stdin, blocking both sides.
         let stdin = child.stdin.take().unwrap();
-        let hashes: Vec<String> = entries.iter().map(|e| e.blob_hash.clone()).collect();
+        let input: Vec<String> = hashes.iter().map(|h| h.to_string()).collect();
         let writer_thread = std::thread::spawn(move || -> std::io::Result<()> {
             let mut writer = std::io::BufWriter::new(stdin);
-            for hash in &hashes {
+            for hash in &input {
                 writeln!(writer, "{hash}")?;
             }
             Ok(())
@@ -346,35 +376,41 @@ impl GitRepo {
             .map_err(GitError::Exec)?;
 
         if !output.status.success() {
-            return Err(self.command_failed("git cat-file --batch-check", &output));
+            return Err(self.command_failed(COMMAND, &output));
         }
 
         // Each output line: "<hash> <type> <size>" or "<hash> missing"
         let stdout = String::from_utf8_lossy(&output.stdout);
-        stdout
-            .lines()
-            .zip(entries)
-            .map(|(line, entry)| {
+        let lines: Vec<&str> = stdout.lines().collect();
+        if lines.len() != hashes.len() {
+            return Err(GitError::CommandFailed {
+                command: COMMAND.to_string(),
+                exit_code: -1,
+                stderr: format!(
+                    "Expected {} output lines, got {}",
+                    hashes.len(),
+                    lines.len()
+                ),
+            });
+        }
+
+        lines
+            .into_iter()
+            .zip(hashes)
+            .map(|(line, hash)| {
                 let parts: Vec<&str> = line.split_whitespace().collect();
-                match parts.as_slice() {
-                    [_, _, size_str] => {
-                        size_str
-                            .parse::<u64>()
-                            .map_err(|_| GitError::CommandFailed {
-                                command: format!(
-                                    "git cat-file --batch-check ({})",
-                                    entry.blob_hash
-                                ),
-                                exit_code: -1,
-                                stderr: format!("Could not parse blob size from: {line}"),
-                            })
-                    }
-                    _ => Err(GitError::CommandFailed {
-                        command: format!("git cat-file --batch-check ({})", entry.blob_hash),
-                        exit_code: -1,
-                        stderr: format!("Unexpected output: {line}"),
-                    }),
-                }
+                let stderr = match parts.as_slice() {
+                    [_, _, size_str] => match size_str.parse::<u64>() {
+                        Ok(size) => return Ok(size),
+                        Err(_) => format!("Could not parse blob size from: {line}"),
+                    },
+                    _ => format!("Unexpected output: {line}"),
+                };
+                Err(GitError::CommandFailed {
+                    command: format!("{COMMAND} ({hash})"),
+                    exit_code: -1,
+                    stderr,
+                })
             })
             .collect()
     }
@@ -382,7 +418,7 @@ impl GitRepo {
     /// Walk every commit in the range and collect all added/modified blobs.
     /// Uses `git rev-list` + parallel `git diff-tree --stdin` workers +
     /// single `git cat-file --batch-check`.
-    pub fn walk_history_blobs(&self, range: &str) -> Result<Vec<HistoryBlob>> {
+    pub fn walk_history_blobs(&self, range: &GitRange) -> Result<Vec<HistoryBlob>> {
         let entries = self.collect_history_entries(range)?;
 
         if entries.is_empty() {
@@ -469,6 +505,53 @@ mod tests {
         (tmp, repo)
     }
 
+    fn entry(blob_hash: &str, path: &str) -> BlobEntry {
+        BlobEntry {
+            blob_hash: blob_hash.to_string(),
+            path: path.to_string(),
+            commit: "c0ffee".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_distinct_blob_hashes_lists_each_hash_once_in_first_seen_order() {
+        let entries = [
+            entry("aaaa", "asset.bin"),
+            entry("bbbb", "other.bin"),
+            entry("aaaa", "moved.bin"),
+            entry("cccc", "third.bin"),
+            entry("bbbb", "other-copy.bin"),
+        ];
+
+        assert_eq!(distinct_blob_hashes(&entries), vec!["aaaa", "bbbb", "cccc"]);
+    }
+
+    #[test]
+    #[ignore = "requires git binary"]
+    fn test_batch_blob_sizes_maps_shared_hash_onto_every_entry() {
+        let (_tmp, repo) = setup_test_repo();
+        let root = repo.root().to_path_buf();
+        fs::write(root.join("big.bin"), "x".repeat(700)).unwrap();
+        fs::write(root.join("small.bin"), "x".repeat(30)).unwrap();
+        let hash = |name: &str| {
+            let output = Command::new("git")
+                .args(["hash-object", "-w", name])
+                .current_dir(&root)
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
+        };
+        let (big, small) = (hash("big.bin"), hash("small.bin"));
+
+        let entries = [
+            entry(&big, "big.bin"),
+            entry(&small, "small.bin"),
+            entry(&big, "moved.bin"),
+        ];
+
+        assert_eq!(repo.batch_blob_sizes(&entries).unwrap(), vec![700, 30, 700]);
+    }
+
     #[test]
     #[ignore = "requires git binary"]
     fn test_expand_git_range_bare_ref() {
@@ -498,8 +581,8 @@ mod tests {
             // Try "main" if "master" doesn't exist
             repo.expand_git_range("HEAD~1").unwrap()
         });
-        assert!(expanded.contains("..HEAD"));
-        assert!(!expanded.contains("..."));
+        assert!(expanded.as_str().contains("..HEAD"));
+        assert!(!expanded.as_str().contains("..."));
     }
 
     #[test]
@@ -507,7 +590,7 @@ mod tests {
     fn test_expand_git_range_two_dot() {
         let (_tmp, repo) = setup_test_repo();
         let expanded = repo.expand_git_range("HEAD~1..HEAD").unwrap();
-        assert_eq!(expanded, "HEAD~1..HEAD");
+        assert_eq!(expanded.as_str(), "HEAD~1..HEAD");
     }
 
     #[test]
@@ -515,6 +598,6 @@ mod tests {
     fn test_expand_git_range_three_dot() {
         let (_tmp, repo) = setup_test_repo();
         let expanded = repo.expand_git_range("HEAD~1...HEAD").unwrap();
-        assert_eq!(expanded, "HEAD~1...HEAD");
+        assert_eq!(expanded.as_str(), "HEAD~1...HEAD");
     }
 }
