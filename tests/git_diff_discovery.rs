@@ -10,10 +10,16 @@ struct TestGitRepo {
 
 impl TestGitRepo {
     fn new() -> Self {
+        Self::with_init_args(&[])
+    }
+
+    fn with_init_args(init_args: &[&str]) -> Self {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().to_path_buf();
 
-        Self::git(&root, &["init"]);
+        let mut init = vec!["init"];
+        init.extend_from_slice(init_args);
+        Self::git(&root, &init);
         Self::git(&root, &["config", "user.email", "test@test.com"]);
         Self::git(&root, &["config", "user.name", "Test"]);
 
@@ -400,6 +406,30 @@ fn test_history_blob_grew_then_deleted() {
     let violations = engine.check_history_blobs(&blobs).unwrap();
     assert_eq!(violations.len(), 1);
     assert!(violations[0].path.ends_with("big.log"));
+}
+
+#[test]
+fn test_history_blob_records_commit_in_sha256_repo() {
+    let repo = TestGitRepo::with_init_args(&["--object-format=sha256"]);
+    let base = repo.default_branch();
+
+    TestGitRepo::git(&repo.root, &["checkout", "-b", "feature"]);
+
+    write_large_file(&repo, "big.log", 2048);
+    TestGitRepo::git(&repo.root, &["add", "."]);
+    TestGitRepo::git(&repo.root, &["commit", "-m", "add big log"]);
+    let head = TestGitRepo::git(&repo.root, &["rev-parse", "HEAD"]);
+    assert_eq!(head.len(), 64, "fixture is not a SHA-256 repository");
+
+    let discovery = FileDiscovery::new(&repo.root, &[]).unwrap();
+    let blobs = discovery.discover_history_blobs(&base).unwrap();
+
+    let big: Vec<_> = blobs
+        .iter()
+        .filter(|b| b.path.ends_with("big.log"))
+        .collect();
+    assert_eq!(big.len(), 1);
+    assert_eq!(big[0].commit, head[..12]);
 }
 
 #[test]
