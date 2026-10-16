@@ -1,4 +1,4 @@
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{Shell, generate};
 use std::io;
 use std::path::PathBuf;
@@ -23,46 +23,11 @@ pub struct Cli {
     pub debug: bool,
 }
 
-#[derive(Subcommand, Debug, Clone)]
+#[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Check files for size violations
     #[command(alias = "c")]
-    Check {
-        /// Paths to check
-        paths: Vec<PathBuf>,
-
-        /// Configuration file path
-        #[arg(short, long, value_name = "FILE")]
-        config: Option<PathBuf>,
-
-        /// Output format
-        #[arg(short = 'f', long, default_value = "human")]
-        format: OutputFormat,
-
-        /// Check only staged files (git diff --staged)
-        #[arg(long)]
-        staged: bool,
-
-        /// Check working tree files
-        #[arg(long, conflicts_with = "git")]
-        working_tree: bool,
-
-        /// Check files changed in a git revision range (e.g. "main", "main..HEAD", "main...feature")
-        #[arg(long, value_name = "RANGE", conflicts_with_all = ["staged", "working_tree"])]
-        git: Option<String>,
-
-        /// Skip git history scanning for deleted blobs (only check files at HEAD)
-        #[arg(long, requires = "git")]
-        no_history: bool,
-
-        /// Quiet mode (only show violations)
-        #[arg(short, long)]
-        quiet: bool,
-
-        /// Treat warnings as errors
-        #[arg(long)]
-        fail_on_warn: bool,
-    },
+    Check(CheckArgs),
 
     /// Initialize sizelint configuration
     #[command(alias = "i")]
@@ -92,7 +57,45 @@ pub enum Commands {
     },
 }
 
-#[derive(Subcommand, Debug, Clone)]
+#[derive(Args, Debug)]
+pub struct CheckArgs {
+    /// Paths to check
+    pub paths: Vec<PathBuf>,
+
+    /// Configuration file path
+    #[arg(short, long, value_name = "FILE")]
+    pub config: Option<PathBuf>,
+
+    /// Output format
+    #[arg(short = 'f', long, default_value = "human")]
+    pub format: OutputFormat,
+
+    /// Check only staged files (git diff --staged)
+    #[arg(long)]
+    pub staged: bool,
+
+    /// Check working tree files
+    #[arg(long, conflicts_with = "git")]
+    pub working_tree: bool,
+
+    /// Check files changed in a git revision range (e.g. "main", "main..HEAD", "main...feature")
+    #[arg(long, value_name = "RANGE", conflicts_with_all = ["staged", "working_tree"])]
+    pub git: Option<String>,
+
+    /// Skip git history scanning for deleted blobs (only check files at HEAD)
+    #[arg(long, requires = "git")]
+    pub no_history: bool,
+
+    /// Quiet mode (only show violations)
+    #[arg(short, long)]
+    pub quiet: bool,
+
+    /// Treat warnings as errors
+    #[arg(long)]
+    pub fail_on_warn: bool,
+}
+
+#[derive(Subcommand, Debug)]
 pub enum RuleAction {
     /// List available rules
     #[command(alias = "l")]
@@ -102,7 +105,7 @@ pub enum RuleAction {
     Describe { rule: String },
 }
 
-#[derive(ValueEnum, Debug, Clone)]
+#[derive(ValueEnum, Debug, Clone, Copy)]
 pub enum OutputFormat {
     /// Human-readable output
     Human,
@@ -111,66 +114,6 @@ pub enum OutputFormat {
 }
 
 impl Cli {
-    pub fn get_command(&self) -> Commands {
-        self.command.clone()
-    }
-
-    pub fn get_format(&self) -> OutputFormat {
-        match &self.command {
-            Commands::Check { format, .. } => format.clone(),
-            _ => OutputFormat::Human,
-        }
-    }
-
-    pub fn get_quiet(&self) -> bool {
-        match &self.command {
-            Commands::Check { quiet, .. } => *quiet,
-            _ => false,
-        }
-    }
-
-    pub fn get_staged(&self) -> bool {
-        match &self.command {
-            Commands::Check { staged, .. } => *staged,
-            _ => false,
-        }
-    }
-
-    pub fn get_working_tree(&self) -> bool {
-        match &self.command {
-            Commands::Check { working_tree, .. } => *working_tree,
-            _ => false,
-        }
-    }
-
-    pub fn get_git(&self) -> Option<String> {
-        match &self.command {
-            Commands::Check { git, .. } => git.clone(),
-            _ => None,
-        }
-    }
-
-    pub fn get_no_history(&self) -> bool {
-        match &self.command {
-            Commands::Check { no_history, .. } => *no_history,
-            _ => false,
-        }
-    }
-
-    pub fn get_fail_on_warn(&self) -> bool {
-        match &self.command {
-            Commands::Check { fail_on_warn, .. } => *fail_on_warn,
-            _ => false,
-        }
-    }
-
-    pub fn get_check_config(&self) -> Option<PathBuf> {
-        match &self.command {
-            Commands::Check { config, .. } => config.clone(),
-            _ => None,
-        }
-    }
-
     pub fn generate_completion(shell: Shell) {
         generate(shell, &mut Self::command(), "sizelint", &mut io::stdout());
     }

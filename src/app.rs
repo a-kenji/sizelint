@@ -1,4 +1,4 @@
-use crate::cli::{Cli, Commands, RuleAction};
+use crate::cli::{CheckArgs, Cli, Commands, RuleAction};
 use crate::config::Config;
 use crate::discovery::FileDiscovery;
 use crate::error::{Result, SizelintError};
@@ -12,36 +12,35 @@ use std::process::ExitCode;
 use tracing::{Level, debug, span};
 
 pub struct App {
-    cli: Cli,
     config: Config,
 }
 
 impl App {
-    pub fn new(cli: Cli) -> Result<Self> {
-        let _span = span!(Level::DEBUG, "App::new").entered();
-        debug!("Creating new App instance");
-
-        let config = Self::load_config(&cli)?;
-
-        debug!("App initialized successfully");
-        Ok(Self { cli, config })
+    pub fn run(cli: Cli) -> Result<ExitCode> {
+        match cli.command {
+            Commands::Check(args) => {
+                let config_path = args.config.as_deref().or(cli.config.as_deref());
+                Self::load(config_path)?.run_check(&args)
+            }
+            Commands::Rules { action } => Self::load(cli.config.as_deref())?.run_rules(&action),
+            Commands::Init {
+                force,
+                stdout,
+                edit,
+            } => run_init(force, stdout, edit),
+            Commands::Completions { shell } => {
+                Cli::generate_completion(shell);
+                Ok(ExitCode::SUCCESS)
+            }
+        }
     }
 
-    fn load_config(cli: &Cli) -> Result<Config> {
-        let _span = span!(Level::DEBUG, "load_config").entered();
+    fn load(config_path: Option<&Path>) -> Result<Self> {
+        let _span = span!(Level::DEBUG, "App::load").entered();
 
-        // Priority order: 1) subcommand config, 2) global config, 3) auto-discover, 4) default
-        let config = if let Some(config_path) = cli.get_check_config() {
-            debug!(
-                "Loading config from subcommand-specified path: {}",
-                config_path.display()
-            );
-            Config::load(&config_path)?
-        } else if let Some(config_path) = &cli.config {
-            debug!(
-                "Loading config from global config path: {}",
-                config_path.display()
-            );
+        // Priority order: 1) explicit path, 2) auto-discover, 3) default
+        let config = if let Some(config_path) = config_path {
+            debug!("Loading config from {}", config_path.display());
             Config::load(config_path)?
         } else {
             let current_dir = std::env::current_dir()
@@ -64,36 +63,21 @@ impl App {
         };
 
         debug!("Config loaded successfully");
-        Ok(config)
+        Ok(Self { config })
     }
 
-    pub fn run(&self) -> Result<ExitCode> {
-        match self.cli.get_command() {
-            Commands::Check { paths, .. } => self.run_check(paths),
-            Commands::Init {
-                force,
-                stdout,
-                edit,
-            } => self.run_init(force, stdout, edit),
-            Commands::Rules { action } => self.run_rules(action),
-            Commands::Completions { shell } => {
-                Cli::generate_completion(shell);
-                Ok(ExitCode::SUCCESS)
-            }
-        }
-    }
-
-    fn run_check(&self, paths: Vec<PathBuf>) -> Result<ExitCode> {
+    fn run_check(&self, args: &CheckArgs) -> Result<ExitCode> {
         let start = std::time::Instant::now();
-        let check_root = self.check_root(&paths)?;
+        let paths = &args.paths;
+        let check_root = self.check_root(args)?;
 
-        let git_range = match self.active_git_range() {
-            Some(raw) => Some(GitRange::resolve(&check_root, &raw)?),
+        let git_range = match self.active_git_range(args) {
+            Some(raw) => Some(GitRange::resolve(&check_root, raw)?),
             None => None,
         };
 
         let files = if paths.is_empty() {
-            self.discover_files_at(&check_root, git_range.as_ref())?
+            self.discover_files_at(args, &check_root, git_range.as_ref())?
         } else {
             // Explicit files pass through; directories use the same
             // git-aware discovery as the no-paths case.
@@ -101,13 +85,13 @@ impl App {
             let mut dirs = Vec::new();
             for path in paths {
                 if path.is_file() {
-                    files.push(path);
+                    files.push(path.clone());
                 } else if path.is_dir() {
                     dirs.push(path);
                 }
             }
             for dir in &dirs {
-                files.extend(self.discover_files_at(dir, git_range.as_ref())?);
+                files.extend(self.discover_files_at(args, dir, git_range.as_ref())?);
             }
             files
         };
@@ -134,7 +118,7 @@ impl App {
 
         // Phase 2: walk git history for oversized blobs
         if let Some(range) = git_range
-            && !self.cli.get_no_history()
+            && !args.no_history
         {
             let discovery = FileDiscovery::new(&check_root, &self.config.sizelint.excludes)?;
             let history_blobs = discovery.discover_history_blobs(&range)?;
@@ -166,6 +150,7 @@ impl App {
         let descriptions = rule_engine.descriptions();
 
         self.output_results(
+            args,
             &violations,
             file_count,
             start.elapsed(),
@@ -179,13 +164,14 @@ impl App {
     /// When explicit paths are given, discovers the git repo for each and
     /// verifies they all share the same root. Errors if paths span multiple
     /// repos and `--git` is active.
-    fn check_root(&self, paths: &[PathBuf]) -> Result<PathBuf> {
+    fn check_root(&self, args: &CheckArgs) -> Result<PathBuf> {
+        let paths = &args.paths;
         if paths.is_empty() {
             return std::env::current_dir()
                 .map_err(|e| SizelintError::CurrentDirectory { source: e });
         }
 
-        let git_active = self.active_git_range().is_some();
+        let git_active = self.active_git_range(args).is_some();
         let mut roots: Vec<PathBuf> = Vec::new();
         let mut visited = HashSet::new();
 
@@ -236,25 +222,24 @@ impl App {
     }
 
     /// Returns the active git range if --git or config git is in effect.
-    fn active_git_range(&self) -> Option<String> {
-        self.cli.get_git().or(self.config.sizelint.git.clone())
+    fn active_git_range<'a>(&'a self, args: &'a CheckArgs) -> Option<&'a str> {
+        args.git.as_deref().or(self.config.sizelint.git.as_deref())
     }
 
     fn discover_files_at(
         &self,
-        root: &std::path::Path,
+        args: &CheckArgs,
+        root: &Path,
         git_range: Option<&GitRange>,
     ) -> Result<Vec<PathBuf>> {
         let discovery = FileDiscovery::new(root, &self.config.sizelint.excludes)?;
 
         debug!("Discovering files...");
 
-        if self.cli.get_staged()
-            || (self.config.sizelint.check_staged && discovery.is_in_git_repo())
-        {
+        if args.staged || (self.config.sizelint.check_staged && discovery.is_in_git_repo()) {
             print_progress("Checking staged files (git diff --staged)");
             discovery.discover_staged_files()
-        } else if self.cli.get_working_tree()
+        } else if args.working_tree
             || (self.config.sizelint.check_working_tree && discovery.is_in_git_repo())
         {
             print_progress("Checking working tree files (git diff)");
@@ -276,6 +261,7 @@ impl App {
 
     fn output_results(
         &self,
+        args: &CheckArgs,
         violations: &[crate::rules::Violation],
         file_count: usize,
         elapsed: std::time::Duration,
@@ -284,7 +270,7 @@ impl App {
     ) -> Result<ExitCode> {
         let cwd =
             std::env::current_dir().map_err(|e| SizelintError::CurrentDirectory { source: e })?;
-        let formatter = OutputFormatter::new(self.cli.get_format(), self.cli.get_quiet(), cwd);
+        let formatter = OutputFormatter::new(args.format, args.quiet, cwd);
         formatter.output_results(
             &mut std::io::stdout().lock(),
             violations,
@@ -299,7 +285,7 @@ impl App {
                 .iter()
                 .any(|v| matches!(v.severity, crate::rules::Severity::Error));
 
-            let fail_on_warn = self.cli.get_fail_on_warn() || self.config.sizelint.fail_on_warn;
+            let fail_on_warn = args.fail_on_warn || self.config.sizelint.fail_on_warn;
             let has_warnings = violations
                 .iter()
                 .any(|v| matches!(v.severity, crate::rules::Severity::Warning));
@@ -312,74 +298,7 @@ impl App {
         Ok(ExitCode::SUCCESS)
     }
 
-    fn run_init(&self, force: bool, stdout: bool, edit: bool) -> Result<ExitCode> {
-        let default_config = Config::create_default_config();
-
-        if stdout {
-            println!("{default_config}");
-            return Ok(ExitCode::SUCCESS);
-        }
-
-        let config_file = PathBuf::from("sizelint.toml");
-
-        if config_file.exists() && !force {
-            if edit {
-                print_progress(&format!("Opening existing {}", config_file.display()));
-                self.open_editor(&config_file)?;
-                return Ok(ExitCode::SUCCESS);
-            } else {
-                print_error(
-                    "sizelint.toml already exists. Use --force to overwrite or --edit to open existing file.",
-                );
-                return Ok(ExitCode::FAILURE);
-            }
-        }
-
-        std::fs::write(&config_file, default_config).map_err(|e| {
-            SizelintError::filesystem("write config file".to_string(), config_file.clone(), e)
-        })?;
-
-        print_success(&format!("Created {}", config_file.display()));
-
-        if edit {
-            self.open_editor(&config_file)?;
-        } else {
-            println!(
-                "You can now customize the configuration and run 'sizelint check' to start linting."
-            );
-        }
-
-        Ok(ExitCode::SUCCESS)
-    }
-
-    fn open_editor(&self, file_path: &PathBuf) -> Result<()> {
-        use std::process::Command;
-
-        let editor = std::env::var("VISUAL")
-            .or_else(|_| std::env::var("EDITOR"))
-            .unwrap_or_else(|_| "vi".to_string());
-
-        print_progress(&format!("Opening {} in {}...", file_path.display(), editor));
-
-        let status = Command::new(&editor).arg(file_path).status().map_err(|e| {
-            SizelintError::EditorExec {
-                editor: editor.clone(),
-                source: e,
-            }
-        })?;
-
-        if !status.success() {
-            return Err(SizelintError::EditorFailed {
-                editor,
-                exit_code: status.code().unwrap_or(-1),
-            });
-        }
-
-        print_success("Configuration saved");
-        Ok(())
-    }
-
-    fn run_rules(&self, action: RuleAction) -> Result<ExitCode> {
+    fn run_rules(&self, action: &RuleAction) -> Result<ExitCode> {
         match action {
             RuleAction::List => {
                 let rule_engine = self.create_rule_engine()?;
@@ -490,7 +409,7 @@ impl App {
                 let rule_engine = self.create_rule_engine()?;
                 let rule_info = rule_engine.get_all_rule_info(&self.config);
 
-                if let Some(info) = rule_info.iter().find(|r| r.name == rule) {
+                if let Some(info) = rule_info.iter().find(|r| &r.name == rule) {
                     println!("{}", format!("Rule: {}", info.name).bold().blue());
                     println!("{}", "━".repeat(50).blue());
                     println!();
@@ -632,4 +551,73 @@ fn within_repo(dir: &Path, root: &Path) -> bool {
             .ancestors()
             .take_while(|ancestor| *ancestor != root)
             .all(|ancestor| !ancestor.join(".git").exists())
+}
+
+fn run_init(force: bool, stdout: bool, edit: bool) -> Result<ExitCode> {
+    let default_config = Config::create_default_config();
+
+    if stdout {
+        println!("{default_config}");
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    let config_file = PathBuf::from("sizelint.toml");
+
+    if config_file.exists() && !force {
+        if edit {
+            print_progress(&format!("Opening existing {}", config_file.display()));
+            open_editor(&config_file)?;
+            return Ok(ExitCode::SUCCESS);
+        } else {
+            print_error(
+                "sizelint.toml already exists. Use --force to overwrite or --edit to open existing file.",
+            );
+            return Ok(ExitCode::FAILURE);
+        }
+    }
+
+    std::fs::write(&config_file, default_config).map_err(|e| {
+        SizelintError::filesystem("write config file".to_string(), config_file.clone(), e)
+    })?;
+
+    print_success(&format!("Created {}", config_file.display()));
+
+    if edit {
+        open_editor(&config_file)?;
+    } else {
+        println!(
+            "You can now customize the configuration and run 'sizelint check' to start linting."
+        );
+    }
+
+    Ok(ExitCode::SUCCESS)
+}
+
+fn open_editor(file_path: &Path) -> Result<()> {
+    use std::process::Command;
+
+    let editor = std::env::var("VISUAL")
+        .or_else(|_| std::env::var("EDITOR"))
+        .unwrap_or_else(|_| "vi".to_string());
+
+    print_progress(&format!("Opening {} in {}...", file_path.display(), editor));
+
+    let status =
+        Command::new(&editor)
+            .arg(file_path)
+            .status()
+            .map_err(|e| SizelintError::EditorExec {
+                editor: editor.clone(),
+                source: e,
+            })?;
+
+    if !status.success() {
+        return Err(SizelintError::EditorFailed {
+            editor,
+            exit_code: status.code().unwrap_or(-1),
+        });
+    }
+
+    print_success("Configuration saved");
+    Ok(())
 }
