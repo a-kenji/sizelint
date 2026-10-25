@@ -23,7 +23,7 @@ jobs:
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
+      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
         with:
           diagnostic-endpoint: ""
       - name: "build dependencies"
@@ -40,7 +40,7 @@ jobs:
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
+      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
         with:
           diagnostic-endpoint: ""
       - name: "check formatting"
@@ -58,7 +58,7 @@ jobs:
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
+      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
         with:
           diagnostic-endpoint: ""
       - name: "run tests"
@@ -76,7 +76,7 @@ jobs:
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
+      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
         with:
           diagnostic-endpoint: ""
       - name: "build cargo documentation"
@@ -94,7 +94,7 @@ jobs:
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
+      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
         with:
           diagnostic-endpoint: ""
       - name: "run cargo clippy"
@@ -112,7 +112,7 @@ jobs:
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
+      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
         with:
           diagnostic-endpoint: ""
       - name: "build sizelint"
@@ -130,7 +130,7 @@ jobs:
         with:
           name: kenji
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
+      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
         with:
           diagnostic-endpoint: ""
       - name: "build devshells"
