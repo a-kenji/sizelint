@@ -7,7 +7,7 @@ use crate::output::{OutputFormatter, print_error, print_progress, print_success}
 use crate::rules::{ConfigurableRule, RuleEngine};
 use colored::*;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use tracing::{Level, debug, span};
 
@@ -191,8 +191,8 @@ impl App {
         }
 
         let git_active = self.active_git_range().is_some();
-        let mut roots = HashSet::new();
-        let mut first_root = None;
+        let mut roots: Vec<PathBuf> = Vec::new();
+        let mut visited = HashSet::new();
 
         for p in paths {
             let dir = if p.is_dir() {
@@ -201,21 +201,27 @@ impl App {
                 p.parent().unwrap_or(p).to_path_buf()
             };
 
+            if !visited.insert(dir.clone()) {
+                continue;
+            }
+            let canonical = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+            if roots.iter().any(|root| within_repo(&canonical, root)) {
+                continue;
+            }
+
             if let Ok(repo) = GitRepo::discover(&dir) {
                 let root = repo.root().to_path_buf();
-                if first_root.is_none() {
-                    first_root = Some(root.clone());
+                if !roots.contains(&root) {
+                    roots.push(root);
                 }
-                roots.insert(root);
             }
         }
 
         if git_active && roots.len() > 1 {
-            return Err(GitError::MultipleRepos {
-                roots: roots.into_iter().collect(),
-            }
-            .into());
+            return Err(GitError::MultipleRepos { roots }.into());
         }
+
+        let first_root = roots.into_iter().next();
 
         first_root
             .or_else(|| {
@@ -616,4 +622,13 @@ impl App {
         engine.add_rule(rule);
         Ok(())
     }
+}
+
+/// Check manually, if `dir` is a repository member of `root`.
+fn within_repo(dir: &Path, root: &Path) -> bool {
+    dir.starts_with(root)
+        && dir
+            .ancestors()
+            .take_while(|ancestor| *ancestor != root)
+            .all(|ancestor| !ancestor.join(".git").exists())
 }
