@@ -1,5 +1,5 @@
 use crate::cli::OutputFormat;
-use crate::error::Result;
+use crate::error::{Result, SizelintError};
 use crate::rules::{Severity, Violation};
 use colored::*;
 use serde::{Deserialize, Serialize};
@@ -56,6 +56,7 @@ impl OutputFormatter {
 
     pub fn output_results(
         &self,
+        out: &mut impl Write,
         violations: &[Violation],
         files_checked: usize,
         elapsed: Duration,
@@ -65,11 +66,17 @@ impl OutputFormatter {
         let summary = self.create_summary(violations, files_checked, suggestions);
 
         match self.format {
-            OutputFormat::Human => {
-                self.output_human(violations, &summary, elapsed, suggestions, descriptions)
-            }
-            OutputFormat::Json => self.output_json(&summary),
+            OutputFormat::Human => self.output_human(
+                out,
+                violations,
+                &summary,
+                elapsed,
+                suggestions,
+                descriptions,
+            ),
+            OutputFormat::Json => Self::output_json(out, &summary),
         }
+        .map_err(|source| SizelintError::OutputWrite { source })
     }
 
     fn create_summary(
@@ -120,13 +127,13 @@ impl OutputFormatter {
 
     fn output_human(
         &self,
+        out: &mut impl Write,
         violations: &[Violation],
         summary: &OutputSummary,
         elapsed: Duration,
         suggestions: &HashMap<&str, &str>,
         descriptions: &HashMap<&str, &str>,
-    ) -> Result<()> {
-        let mut stdout = io::stdout();
+    ) -> io::Result<()> {
         let gutter = "┃".dimmed();
 
         let mut by_rule: BTreeMap<&str, Vec<&Violation>> = BTreeMap::new();
@@ -137,16 +144,16 @@ impl OutputFormatter {
         for (rule_name, rule_violations) in &by_rule {
             if let Some(description) = descriptions.get(rule_name) {
                 writeln!(
-                    stdout,
+                    out,
                     "{} {} {}",
                     rule_name.bold(),
                     "—".dimmed(),
                     description.dimmed()
                 )?;
             } else {
-                writeln!(stdout, "{}", rule_name.bold())?;
+                writeln!(out, "{}", rule_name.bold())?;
             }
-            writeln!(stdout, "{gutter}")?;
+            writeln!(out, "{gutter}")?;
 
             let mut errors: Vec<&Violation> = Vec::new();
             let mut warnings: Vec<&Violation> = Vec::new();
@@ -171,13 +178,13 @@ impl OutputFormatter {
                     continue;
                 }
                 let message = &severity_group[0].message;
-                writeln!(stdout, "{gutter} {} {}", color_fn(marker.bold()), message)?;
+                writeln!(out, "{gutter} {} {}", color_fn(marker.bold()), message)?;
                 for v in severity_group {
                     let path_str = self.relative_path(&v.path);
                     match (&v.actual_value, &v.commit) {
                         (Some(actual), Some(commit)) => {
                             writeln!(
-                                stdout,
+                                out,
                                 "{gutter}     {} ({}, commit {})",
                                 path_str.bold(),
                                 actual,
@@ -185,35 +192,30 @@ impl OutputFormatter {
                             )?;
                         }
                         (Some(actual), None) => {
-                            writeln!(stdout, "{gutter}     {} ({})", path_str.bold(), actual)?;
+                            writeln!(out, "{gutter}     {} ({})", path_str.bold(), actual)?;
                         }
                         (None, Some(commit)) => {
-                            writeln!(
-                                stdout,
-                                "{gutter}     {} (commit {})",
-                                path_str.bold(),
-                                commit
-                            )?;
+                            writeln!(out, "{gutter}     {} (commit {})", path_str.bold(), commit)?;
                         }
                         (None, None) => {
-                            writeln!(stdout, "{gutter}     {}", path_str.bold())?;
+                            writeln!(out, "{gutter}     {}", path_str.bold())?;
                         }
                     }
                 }
             }
 
             if let Some(suggestion) = suggestions.get(rule_name) {
-                writeln!(stdout, "{gutter}")?;
-                writeln!(stdout, "{} {}", "hint:".cyan().bold(), suggestion.dimmed())?;
+                writeln!(out, "{gutter}")?;
+                writeln!(out, "{} {}", "hint:".cyan().bold(), suggestion.dimmed())?;
             }
 
-            writeln!(stdout)?;
+            writeln!(out)?;
         }
 
         if !self.quiet {
-            writeln!(stdout)?;
+            writeln!(out)?;
             writeln!(
-                stdout,
+                out,
                 "{}",
                 format!("Analysis took {:.2}s", elapsed.as_secs_f64()).dimmed()
             )?;
@@ -249,17 +251,15 @@ impl OutputFormatter {
                 "PASSED".green().bold()
             };
 
-            writeln!(stdout, "{}. [{}]", parts.join(", "), status)?;
+            writeln!(out, "{}. [{}]", parts.join(", "), status)?;
         }
 
         Ok(())
     }
 
-    fn output_json(&self, summary: &OutputSummary) -> Result<()> {
-        let json = serde_json::to_string_pretty(summary)?;
-
-        println!("{json}");
-        Ok(())
+    fn output_json(out: &mut impl Write, summary: &OutputSummary) -> io::Result<()> {
+        serde_json::to_writer_pretty(&mut *out, summary)?;
+        writeln!(out)
     }
 }
 
@@ -275,4 +275,45 @@ pub fn print_error(message: &str) {
 
 pub fn print_success(message: &str) {
     eprintln!("{} {}", "✓".green().bold(), message.green());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use miette::Diagnostic;
+
+    struct ClosedPipe;
+
+    impl Write for ClosedPipe {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::ErrorKind::BrokenPipe.into())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn write_failure_is_reported_as_output_error() {
+        for format in [OutputFormat::Human, OutputFormat::Json] {
+            let formatter = OutputFormatter::new(format, false, PathBuf::from("/"));
+            let err = formatter
+                .output_results(
+                    &mut ClosedPipe,
+                    &[],
+                    0,
+                    Duration::ZERO,
+                    &HashMap::new(),
+                    &HashMap::new(),
+                )
+                .unwrap_err();
+
+            assert!(matches!(err, SizelintError::OutputWrite { .. }), "{err:?}");
+            assert_eq!(
+                err.code().map(|c| c.to_string()).as_deref(),
+                Some("sizelint::output::write_failed")
+            );
+        }
+    }
 }

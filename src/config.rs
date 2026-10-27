@@ -139,7 +139,7 @@ impl Config {
             .map_err(|e| SizelintError::config_read(path.as_ref().to_path_buf(), e))?;
 
         let config: Config = toml::from_str(&content)
-            .map_err(|e| SizelintError::config_parse(path.as_ref().to_path_buf(), e))?;
+            .map_err(|e| SizelintError::config_parse(path.as_ref(), content, e))?;
 
         debug!("Config loaded successfully from file");
         Ok(config)
@@ -210,5 +210,28 @@ mod tests {
     fn test_embedded_config_is_valid_toml() {
         let result = toml::from_str::<Config>(DEFAULT_CONFIG_TOML);
         assert!(result.is_ok(), "Embedded config must be valid TOML");
+    }
+
+    #[test]
+    fn parse_error_labels_the_offending_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sizelint.toml");
+        let content = "[sizelint]\nmax_file_size = \"10MB\"\nexcludes = [\n";
+        std::fs::write(&path, content).unwrap();
+
+        let err = Config::load_from_file(&path).unwrap_err();
+        let SizelintError::ConfigParse { span, .. } = &err else {
+            panic!("expected ConfigParse, got {err:?}");
+        };
+        assert!(
+            span.offset() >= content.find("excludes").unwrap(),
+            "span {span:?} should point into the broken array"
+        );
+
+        let mut rendered = String::new();
+        miette::GraphicalReportHandler::new_themed(miette::GraphicalTheme::unicode_nocolor())
+            .render_report(&mut rendered, &err)
+            .unwrap();
+        assert!(rendered.contains("excludes = ["), "{rendered}");
     }
 }

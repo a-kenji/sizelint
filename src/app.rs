@@ -291,7 +291,14 @@ impl App {
         let cwd =
             std::env::current_dir().map_err(|e| SizelintError::CurrentDirectory { source: e })?;
         let formatter = OutputFormatter::new(self.cli.get_format(), self.cli.get_quiet(), cwd);
-        formatter.output_results(violations, file_count, elapsed, suggestions, descriptions)?;
+        formatter.output_results(
+            &mut std::io::stdout().lock(),
+            violations,
+            file_count,
+            elapsed,
+            suggestions,
+            descriptions,
+        )?;
 
         if !violations.is_empty() {
             let has_errors = violations

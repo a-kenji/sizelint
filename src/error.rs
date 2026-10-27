@@ -1,8 +1,9 @@
-use miette::Diagnostic;
-use std::path::PathBuf;
+use miette::{Diagnostic, NamedSource, SourceSpan};
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 #[derive(Error, Debug, Diagnostic)]
+#[non_exhaustive]
 pub enum SizelintError {
     #[error(transparent)]
     #[diagnostic(transparent)]
@@ -19,15 +20,14 @@ pub enum SizelintError {
         source: std::io::Error,
     },
 
-    #[error("Failed to parse config file {path}")]
-    #[diagnostic(
-        code(sizelint::config::parse_error),
-        help("Check your TOML syntax - visit https://toml.io for format documentation")
-    )]
+    #[error("Failed to parse config file {}", .src.name())]
+    #[diagnostic(code(sizelint::config::parse_error))]
     ConfigParse {
-        path: PathBuf,
-        #[source]
-        source: toml::de::Error,
+        #[source_code]
+        src: NamedSource<String>,
+        #[label("{message}")]
+        span: SourceSpan,
+        message: String,
     },
 
     #[error("Invalid configuration: {field} = '{value}'")]
@@ -49,7 +49,6 @@ pub enum SizelintError {
         source: globset::Error,
     },
 
-    // File system errors
     #[error("Failed to {operation} {path}")]
     #[diagnostic(code(sizelint::filesystem::operation_failed))]
     FileSystem {
@@ -91,14 +90,12 @@ pub enum SizelintError {
     )]
     InvalidSizeFormat { input: String, reason: String },
 
-    // Auto-converted errors for external types
-    #[error("JSON serialization error: {0}")]
-    #[diagnostic(code(sizelint::json::serialize_error))]
-    Serialize(#[from] serde_json::Error),
-
-    #[error("I/O error: {0}")]
-    #[diagnostic(code(sizelint::io::error))]
-    Io(#[from] std::io::Error),
+    #[error("Failed to write results")]
+    #[diagnostic(code(sizelint::output::write_failed))]
+    OutputWrite {
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 pub type Result<T> = miette::Result<T, SizelintError>;
@@ -108,8 +105,13 @@ impl SizelintError {
         Self::ConfigRead { path, source }
     }
 
-    pub fn config_parse(path: PathBuf, source: toml::de::Error) -> Self {
-        Self::ConfigParse { path, source }
+    pub fn config_parse(path: &Path, content: String, source: toml::de::Error) -> Self {
+        let span = source.span().unwrap_or(0..0).into();
+        Self::ConfigParse {
+            src: NamedSource::new(path.display().to_string(), content),
+            span,
+            message: source.message().to_string(),
+        }
     }
 
     pub fn config_invalid(field: String, value: String, expected: String) -> Self {

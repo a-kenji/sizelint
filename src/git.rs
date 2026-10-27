@@ -6,6 +6,7 @@ use std::process::{Command, Stdio};
 use thiserror::Error;
 
 #[derive(Error, Debug, Diagnostic)]
+#[non_exhaustive]
 pub enum GitError {
     #[error("Git repository not found at {path}")]
     #[diagnostic(
