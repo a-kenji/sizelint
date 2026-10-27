@@ -4,7 +4,6 @@
 
   perSystem = _: {
     treefmt = {
-      projectRootFile = ".git/config";
       programs.mdsh.enable = false;
       programs.flake-edit.enable = false;
       programs.nixfmt.enable = true;
