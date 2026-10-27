@@ -12,14 +12,15 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Fully resolved configuration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Config {
     #[serde(flatten)]
     pub sizelint: SizelintConfig,
     pub rules: Option<RulesConfig>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SizelintConfig {
     /// Maximum file size (e.g., "10MB", "1GB")
     pub max_file_size: Option<String>,
@@ -28,31 +29,38 @@ pub struct SizelintConfig {
     pub warn_file_size: Option<String>,
 
     /// Patterns to exclude from checking
-    #[serde(default)]
     pub excludes: Vec<String>,
 
     /// Check only staged files
-    #[serde(default)]
     pub check_staged: bool,
 
     /// Check working tree files
-    #[serde(default)]
     pub check_working_tree: bool,
 
     /// Default git revision range for file discovery
-    #[serde(default)]
     pub git: Option<String>,
 
     /// Respect .gitignore patterns
-    #[serde(default = "default_true")]
     pub respect_gitignore: bool,
 
     /// Treat warnings as errors
-    #[serde(default)]
     pub fail_on_warn: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Deserialize)]
+struct UserConfig {
+    max_file_size: Option<String>,
+    warn_file_size: Option<String>,
+    excludes: Option<Vec<String>>,
+    check_staged: Option<bool>,
+    check_working_tree: Option<bool>,
+    git: Option<String>,
+    respect_gitignore: Option<bool>,
+    fail_on_warn: Option<bool>,
+    rules: Option<RulesConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct RulesConfig {
     #[serde(flatten)]
     pub rules: HashMap<String, RuleDefinition>,
@@ -62,7 +70,7 @@ fn default_priority() -> i32 {
     100
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct RuleDefinition {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -97,77 +105,62 @@ impl Default for Config {
     }
 }
 
-impl SizelintConfig {
-    fn merge_from(&mut self, other: SizelintConfig) {
-        if other.max_file_size.is_some() {
-            self.max_file_size = other.max_file_size;
-        }
-        if other.warn_file_size.is_some() {
-            self.warn_file_size = other.warn_file_size;
-        }
-        if !other.excludes.is_empty() {
-            self.excludes = other.excludes;
-        }
-        self.check_staged = other.check_staged;
-        self.check_working_tree = other.check_working_tree;
-        if other.git.is_some() {
-            self.git = other.git;
-        }
-        self.respect_gitignore = other.respect_gitignore;
-        self.fail_on_warn = other.fail_on_warn;
-    }
-}
-
 impl RulesConfig {
-    fn merge_from(&mut self, other: RulesConfig) {
-        for (name, rule_def) in other.rules {
-            self.rules.insert(name, rule_def);
-        }
-    }
-
     pub fn get_enabled_rules(&self) -> Vec<(&String, &RuleDefinition)> {
         self.rules.iter().filter(|(_, rule)| rule.enabled).collect()
     }
 }
 
 impl Config {
-    pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let _span = span!(Level::DEBUG, "Config::load_from_file", path = %path.as_ref().display())
-            .entered();
+    /// Loads the config file at `path`.
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let path = path.as_ref();
+        let _span = span!(Level::DEBUG, "Config::load", path = %path.display()).entered();
 
-        let content = std::fs::read_to_string(path.as_ref())
-            .map_err(|e| SizelintError::config_read(path.as_ref().to_path_buf(), e))?;
-
-        let config: Config = toml::from_str(&content)
-            .map_err(|e| SizelintError::config_parse(path.as_ref(), content, e))?;
-
-        debug!("Config loaded successfully from file");
-        Ok(config)
-    }
-
-    pub fn load_with_defaults<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let _span =
-            span!(Level::DEBUG, "Config::load_with_defaults", path = %path.as_ref().display())
-                .entered();
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| SizelintError::config_read(path.to_path_buf(), e))?;
+        let user: UserConfig =
+            toml::from_str(&content).map_err(|e| SizelintError::config_parse(path, content, e))?;
 
         let mut config = Self::default();
-
-        let user_config = Self::load_from_file(path)?;
-        config.merge_from_user_config(user_config);
+        config.apply(user);
 
         debug!("Config loaded and merged with defaults");
         Ok(config)
     }
 
-    fn merge_from_user_config(&mut self, user_config: Config) {
-        self.sizelint.merge_from(user_config.sizelint);
+    fn apply(&mut self, user: UserConfig) {
+        let s = &mut self.sizelint;
+        if user.max_file_size.is_some() {
+            s.max_file_size = user.max_file_size;
+        }
+        if user.warn_file_size.is_some() {
+            s.warn_file_size = user.warn_file_size;
+        }
+        if let Some(excludes) = user.excludes {
+            s.excludes = excludes;
+        }
+        if let Some(check_staged) = user.check_staged {
+            s.check_staged = check_staged;
+        }
+        if let Some(check_working_tree) = user.check_working_tree {
+            s.check_working_tree = check_working_tree;
+        }
+        if user.git.is_some() {
+            s.git = user.git;
+        }
+        if let Some(respect_gitignore) = user.respect_gitignore {
+            s.respect_gitignore = respect_gitignore;
+        }
+        if let Some(fail_on_warn) = user.fail_on_warn {
+            s.fail_on_warn = fail_on_warn;
+        }
 
-        if let Some(user_rules) = user_config.rules {
-            if let Some(ref mut default_rules) = self.rules {
-                default_rules.merge_from(user_rules);
-            } else {
-                self.rules = Some(user_rules);
-            }
+        if let Some(user_rules) = user.rules {
+            self.rules
+                .get_or_insert_with(RulesConfig::default)
+                .rules
+                .extend(user_rules.rules);
         }
     }
 
@@ -219,7 +212,7 @@ mod tests {
         let content = "[sizelint]\nmax_file_size = \"10MB\"\nexcludes = [\n";
         std::fs::write(&path, content).unwrap();
 
-        let err = Config::load_from_file(&path).unwrap_err();
+        let err = Config::load(&path).unwrap_err();
         let SizelintError::ConfigParse { span, .. } = &err else {
             panic!("expected ConfigParse, got {err:?}");
         };
@@ -233,5 +226,89 @@ mod tests {
             .render_report(&mut rendered, &err)
             .unwrap();
         assert!(rendered.contains("excludes = ["), "{rendered}");
+    }
+
+    fn load_str(content: &str) -> Result<Config> {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sizelint.toml");
+        std::fs::write(&path, content).unwrap();
+        Config::load(&path)
+    }
+
+    #[test]
+    fn test_unset_user_keys_keep_default_values() {
+        let config = load_str(r#"max_file_size = "3MB""#).unwrap();
+        let defaults = Config::default();
+
+        assert_eq!(config.sizelint.max_file_size.as_deref(), Some("3MB"));
+        assert_eq!(config.sizelint.check_staged, defaults.sizelint.check_staged);
+        assert_eq!(
+            config.sizelint.respect_gitignore,
+            defaults.sizelint.respect_gitignore
+        );
+        assert_eq!(config.sizelint.excludes, defaults.sizelint.excludes);
+    }
+
+    #[test]
+    fn test_set_user_booleans_override_default_values() {
+        let config = load_str("respect_gitignore = false\nfail_on_warn = true").unwrap();
+
+        assert!(!config.sizelint.respect_gitignore);
+        assert!(config.sizelint.fail_on_warn);
+    }
+
+    #[test]
+    fn test_user_rule_replaces_default_rule_of_same_name() {
+        let config = load_str(
+            r#"
+[rules.default]
+max_size = "5MB"
+
+[rules.images]
+includes = ["*.png"]
+max_size = "1MB"
+"#,
+        )
+        .unwrap();
+        let rules = &config.rules.as_ref().unwrap().rules;
+
+        assert_eq!(rules["default"].max_size.as_deref(), Some("5MB"));
+        assert_eq!(rules["default"].description, "");
+        assert_eq!(rules["images"].max_size.as_deref(), Some("1MB"));
+        assert!(rules.contains_key("medium_files"));
+    }
+
+    #[test]
+    fn test_user_value_of_wrong_type_points_at_the_value() {
+        let err = load_str(r#"fail_on_warn = "yes""#).unwrap_err();
+
+        let SizelintError::ConfigParse { span, .. } = err else {
+            panic!("expected ConfigParse, got {err:?}");
+        };
+        assert_eq!((span.offset(), span.len()), (15, 5));
+    }
+
+    #[test]
+    fn test_init_output_loads_as_user_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sizelint.toml");
+        std::fs::write(&path, Config::create_default_config()).unwrap();
+
+        assert_eq!(Config::load(&path).unwrap(), Config::default());
+    }
+
+    #[test]
+    fn test_load_keeps_shipped_default_rule() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("custom.toml");
+        std::fs::write(&path, "fail_on_warn = true\n").unwrap();
+
+        let config = Config::load(&path).unwrap();
+
+        let default_rule = &config.rules.as_ref().unwrap().rules["default"];
+        assert_eq!(default_rule.description, "Default file size check");
+        assert!(default_rule.suggestion.is_some());
+        assert_eq!(config.sizelint.max_file_size.as_deref(), Some("2MB"));
+        assert!(config.sizelint.fail_on_warn);
     }
 }
