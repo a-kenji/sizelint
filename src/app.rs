@@ -77,9 +77,7 @@ impl App {
             } => self.run_init(force, stdout, edit),
             Commands::Rules { action } => self.run_rules(action),
             Commands::Completions { shell } => {
-                Cli::generate_completion(&shell).map_err(|e| {
-                    SizelintError::config_invalid("shell".to_string(), shell.to_string(), e)
-                })?;
+                Cli::generate_completion(shell);
                 Ok(ExitCode::SUCCESS)
             }
         }
