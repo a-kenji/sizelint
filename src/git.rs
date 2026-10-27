@@ -255,7 +255,7 @@ impl GitRepo {
         let mut current_commit = String::new();
 
         for line in String::from_utf8_lossy(&output.stdout).lines() {
-            if line.len() == 40 && line.bytes().all(|b| b.is_ascii_hexdigit()) {
+            if matches!(line.len(), 40 | 64) && line.bytes().all(|b| b.is_ascii_hexdigit()) {
                 current_commit = line[..12].to_string();
                 continue;
             }
