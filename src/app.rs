@@ -2,11 +2,11 @@ use crate::cli::{CheckArgs, Cli, Commands, RuleAction};
 use crate::config::Config;
 use crate::discovery::FileDiscovery;
 use crate::error::{Result, SizelintError};
-use crate::git::{GitError, GitRange, GitRepo};
+use crate::git::{GitError, GitRange};
 use crate::output::{OutputFormatter, print_error, print_progress, print_success};
 use crate::rules::{ConfigurableRule, RuleEngine};
 use colored::*;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use tracing::{Level, debug, span};
@@ -69,15 +69,23 @@ impl App {
     fn run_check(&self, args: &CheckArgs) -> Result<ExitCode> {
         let start = std::time::Instant::now();
         let paths = &args.paths;
-        let check_root = self.check_root(args)?;
 
-        let git_range = match self.active_git_range(args) {
-            Some(raw) => Some(GitRange::resolve(&check_root, raw)?),
+        let git = match self.active_git_range(args) {
+            Some(raw) => {
+                let root = if paths.is_empty() {
+                    current_dir()?
+                } else {
+                    repo_root(paths)?
+                };
+                let range = GitRange::resolve(&root, raw)?;
+                Some((root, range))
+            }
             None => None,
         };
+        let git_range = git.as_ref().map(|(_, range)| range);
 
         let files = if paths.is_empty() {
-            self.discover_files_at(args, &check_root, git_range.as_ref())?
+            self.discover_files_at(args, &current_dir()?, git_range)?
         } else {
             // Explicit files pass through; directories use the same
             // git-aware discovery as the no-paths case.
@@ -91,7 +99,7 @@ impl App {
                 }
             }
             for dir in &dirs {
-                files.extend(self.discover_files_at(args, dir, git_range.as_ref())?);
+                files.extend(self.discover_files_at(args, dir, git_range)?);
             }
             files
         };
@@ -117,11 +125,11 @@ impl App {
         };
 
         // Phase 2: walk git history for oversized blobs
-        if let Some(range) = git_range
+        if let Some((root, range)) = &git
             && !args.no_history
         {
-            let discovery = FileDiscovery::new(&check_root, &self.config.sizelint.excludes)?;
-            let history_blobs = discovery.discover_history_blobs(&range)?;
+            let discovery = FileDiscovery::new(root, &self.config.sizelint.excludes)?;
+            let history_blobs = discovery.discover_history_blobs(range)?;
             if !history_blobs.is_empty() {
                 print_progress(&format!(
                     "Scanning {} blob(s) from git history",
@@ -157,68 +165,6 @@ impl App {
             &suggestions,
             &descriptions,
         )
-    }
-
-    /// Root directory for git operations.
-    ///
-    /// When explicit paths are given, discovers the git repo for each and
-    /// verifies they all share the same root. Errors if paths span multiple
-    /// repos and `--git` is active.
-    fn check_root(&self, args: &CheckArgs) -> Result<PathBuf> {
-        let paths = &args.paths;
-        if paths.is_empty() {
-            return std::env::current_dir()
-                .map_err(|e| SizelintError::CurrentDirectory { source: e });
-        }
-
-        let git_active = self.active_git_range(args).is_some();
-        let mut roots: Vec<PathBuf> = Vec::new();
-        let mut visited = HashSet::new();
-
-        for p in paths {
-            let dir = if p.is_dir() {
-                p.clone()
-            } else {
-                p.parent().unwrap_or(p).to_path_buf()
-            };
-
-            if !visited.insert(dir.clone()) {
-                continue;
-            }
-            let canonical = dir.canonicalize().unwrap_or_else(|_| dir.clone());
-            if roots.iter().any(|root| within_repo(&canonical, root)) {
-                continue;
-            }
-
-            if let Ok(repo) = GitRepo::discover(&dir) {
-                let root = repo.root().to_path_buf();
-                if !roots.contains(&root) {
-                    roots.push(root);
-                }
-            }
-        }
-
-        if git_active && roots.len() > 1 {
-            return Err(GitError::MultipleRepos { roots }.into());
-        }
-
-        let first_root = roots.into_iter().next();
-
-        first_root
-            .or_else(|| {
-                let p = &paths[0];
-                Some(if p.is_dir() {
-                    p.clone()
-                } else {
-                    p.parent().unwrap_or(p).to_path_buf()
-                })
-            })
-            .ok_or_else(|| {
-                GitError::RepoNotFound {
-                    path: paths[0].clone(),
-                }
-                .into()
-            })
     }
 
     /// Returns the active git range if --git or config git is in effect.
@@ -544,13 +490,60 @@ impl App {
     }
 }
 
-/// Check manually, if `dir` is a repository member of `root`.
-fn within_repo(dir: &Path, root: &Path) -> bool {
-    dir.starts_with(root)
-        && dir
-            .ancestors()
-            .take_while(|ancestor| *ancestor != root)
-            .all(|ancestor| !ancestor.join(".git").exists())
+fn current_dir() -> Result<PathBuf> {
+    std::env::current_dir().map_err(|e| SizelintError::CurrentDirectory { source: e })
+}
+
+fn dir_of(path: &Path) -> &Path {
+    if path.is_dir() {
+        return path;
+    }
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    }
+}
+
+/// The repository root shared by all `paths`.
+fn repo_root(paths: &[PathBuf]) -> Result<PathBuf> {
+    let cwd = current_dir()?;
+    let mut roots: Vec<PathBuf> = Vec::new();
+    let mut known: HashMap<PathBuf, Option<usize>> = HashMap::new();
+
+    for path in paths {
+        let dir: PathBuf = cwd.join(dir_of(path)).components().collect();
+        let mut walked = Vec::new();
+        let mut owner = None;
+        for ancestor in dir.ancestors() {
+            if let Some(&root) = known.get(ancestor) {
+                owner = root;
+                break;
+            }
+            walked.push(ancestor.to_path_buf());
+            if ancestor.join(".git").exists() {
+                let root = ancestor
+                    .canonicalize()
+                    .unwrap_or_else(|_| ancestor.to_path_buf());
+                owner = Some(match roots.iter().position(|r| *r == root) {
+                    Some(index) => index,
+                    None => {
+                        roots.push(root);
+                        roots.len() - 1
+                    }
+                });
+                break;
+            }
+        }
+        for dir in walked {
+            known.insert(dir, owner);
+        }
+    }
+
+    match roots.len() {
+        0 => Ok(dir_of(&paths[0]).to_path_buf()),
+        1 => Ok(roots.swap_remove(0)),
+        _ => Err(GitError::MultipleRepos { roots }.into()),
+    }
 }
 
 fn run_init(force: bool, stdout: bool, edit: bool) -> Result<ExitCode> {
