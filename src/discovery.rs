@@ -1,5 +1,5 @@
 use crate::error::{Result, SizelintError};
-use crate::git::GitRepo;
+use crate::git::{GitRange, GitRepo};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use ignore::WalkBuilder;
 use rayon::prelude::*;
@@ -131,7 +131,7 @@ impl FileDiscovery {
         }
     }
 
-    pub fn discover_git_diff_files(&self, range: &str) -> Result<Vec<PathBuf>> {
+    pub fn discover_git_diff_files(&self, range: &GitRange) -> Result<Vec<PathBuf>> {
         match &self.git_repo {
             Some(git_repo) => {
                 let diff_files = git_repo.get_diff_files(range)?;
@@ -144,7 +144,7 @@ impl FileDiscovery {
         }
     }
 
-    pub fn discover_history_blobs(&self, range: &str) -> Result<Vec<crate::git::HistoryBlob>> {
+    pub fn discover_history_blobs(&self, range: &GitRange) -> Result<Vec<crate::git::HistoryBlob>> {
         match &self.git_repo {
             Some(git_repo) => {
                 let blobs = git_repo.walk_history_blobs(range)?;

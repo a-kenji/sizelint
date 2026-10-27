@@ -12,4 +12,4 @@ pub use app::App;
 pub use cli::Cli;
 pub use config::Config;
 pub use error::{Result, SizelintError};
-pub use git::{GitError, HistoryBlob};
+pub use git::{GitError, GitRange, HistoryBlob};
