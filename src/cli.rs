@@ -3,14 +3,6 @@ use clap_complete::{Shell, generate};
 use std::io;
 use std::path::PathBuf;
 
-const SUPPORTED_SHELLS: &[(&str, Shell)] = &[
-    ("bash", Shell::Bash),
-    ("zsh", Shell::Zsh),
-    ("fish", Shell::Fish),
-    ("powershell", Shell::PowerShell),
-    ("elvish", Shell::Elvish),
-];
-
 #[derive(Parser, Debug)]
 #[command(
     name = "sizelint",
@@ -96,7 +88,7 @@ pub enum Commands {
     /// Generate shell completions
     Completions {
         /// Shell to generate completions for
-        shell: String,
+        shell: Shell,
     },
 }
 
@@ -179,26 +171,7 @@ impl Cli {
         }
     }
 
-    pub fn parse_shell(shell_str: &str) -> std::result::Result<Shell, String> {
-        let shell_lower = shell_str.to_lowercase();
-        SUPPORTED_SHELLS
-            .iter()
-            .find(|(name, _)| *name == shell_lower)
-            .map(|(_, shell)| *shell)
-            .ok_or_else(|| {
-                let supported: Vec<&str> = SUPPORTED_SHELLS.iter().map(|(name, _)| *name).collect();
-                format!(
-                    "Unsupported shell: {}. Supported shells: {}",
-                    shell_str,
-                    supported.join(", ")
-                )
-            })
-    }
-
-    pub fn generate_completion(shell_str: &str) -> std::result::Result<(), String> {
-        let shell = Self::parse_shell(shell_str)?;
-        let mut cmd = Self::command();
-        generate(shell, &mut cmd, "sizelint", &mut io::stdout());
-        Ok(())
+    pub fn generate_completion(shell: Shell) {
+        generate(shell, &mut Self::command(), "sizelint", &mut io::stdout());
     }
 }
