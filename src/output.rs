@@ -156,8 +156,8 @@ impl OutputFormatter {
                     Severity::Warning => warnings.push(v),
                 }
             }
-            errors.sort_by(|a, b| b.sort_key.cmp(&a.sort_key));
-            warnings.sort_by(|a, b| b.sort_key.cmp(&a.sort_key));
+            errors.sort_by_key(|v| std::cmp::Reverse(v.sort_key));
+            warnings.sort_by_key(|v| std::cmp::Reverse(v.sort_key));
 
             for (severity_group, marker, color_fn) in [
                 (
