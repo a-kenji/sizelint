@@ -1,26 +1,20 @@
 use clap::Parser;
+use sizelint::cli::Commands;
 use sizelint::{App, Cli};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    if let Err(e) = sizelint::log::init(cli.debug, cli.get_quiet()) {
+    let quiet = matches!(&cli.command, Commands::Check(args) if args.quiet);
+    if let Err(e) = sizelint::log::init(cli.debug, quiet) {
         eprintln!("Failed to initialize logging: {e}");
         return ExitCode::FAILURE;
     }
 
     tracing::debug!("Starting sizelint");
 
-    let app = match App::new(cli) {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("{:?}", miette::Report::new(e));
-            return ExitCode::FAILURE;
-        }
-    };
-
-    match app.run() {
+    match App::run(cli) {
         Ok(code) => {
             tracing::debug!("Sizelint completed");
             code
